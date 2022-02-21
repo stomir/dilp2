@@ -78,21 +78,20 @@ def infer_single_step(ex_val : torch.Tensor, rules : Rulebook, rule_weights : to
     ex_val = disjunction_dim(ex_val, dim = 1)
     return ex_val
         
-        
-
 def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
         targets : torch.Tensor,
         target_values : torch.Tensor,
         steps : int = 2, vars : int = 3) -> torch.Tensor:
     val = base_val
     for i in range(0, steps):
-        logging.warn(f"val: {val}")
         val2 = extend_val(val, vars)
         val2 = infer_single_step(val2, rulebook, weights)
         val = disjuction2(val, val2)
-        logging.warn(f"step val {val} {val2}")
         del val2
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
     return (preds - target_values).square().mean()
     
-    
+def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : List[str]):
+    weights = weights.detach().cpu()
+    for pred in range(0, rulebook.body_predicates.shape[0]):
+        print(rule_str(rs = weights[pred].max(dim = -1)[1], predicate=pred, rulebook=rulebook, pred_names=pred_names))
