@@ -3,7 +3,7 @@ from dilp import *
 import torch
 from tqdm import tqdm #type: ignore
 
-def main(epochs : int = 100, steps : int = 5, cuda : bool = False):
+def main(epochs : int = 100, steps : int = 5, cuda : bool = True):
     dev = torch.device(0) if cuda else torch.device('cpu')
 
     #logging.getLogger().setLevel(logging.DEBUG)
