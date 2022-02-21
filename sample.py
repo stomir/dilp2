@@ -49,7 +49,7 @@ def main(epochs : int = 100, steps : int = 5):
     )
     logging.debug(f"{rulebook.body_predicates.shape=},{rulebook.variable_choices.shape=}")
     pred_names = ['false', 'succ', 'p', 'q']
-    print(f"rules[2,0]:\n{rule_str([2,0], predicate=2, rulebook=rulebook, pred_names=pred_names)}")
+
     targets = torch.as_tensor([
         [2,0,2],
         [2,1,3],
@@ -81,6 +81,8 @@ def main(epochs : int = 100, steps : int = 5):
         mse_loss.backward()
         opt.step()
         print(f"loss: {mse_loss.item()}")
+
+    print_program(rulebook, weights, pred_names)
 
 if __name__ == "__main__":
     fire.Fire(main)
