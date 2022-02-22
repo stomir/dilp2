@@ -124,6 +124,7 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
         val = disjunction2(val, val2)
     val = disjunction_dim(torch.cat(vals, dim=0), dim=0)
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
+    logging.debug(f"{target_values=} {preds=}")
     return (preds - target_values).square().mean()
     
 def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str]):
