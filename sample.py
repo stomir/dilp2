@@ -86,11 +86,11 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     atom_dim = len(constants_f)
     rules_dim = (pred_dim**2)*81
     fact_names = [ x.predicate for x in pred_f]
-    true_facts = B+P
+    true_facts = B
     target_facts = P+N
     var_names = [Term(True, f'X_{i}') for i in range(3)]
 
-    pred_dict : Dict[int, str] = dict(zip(list(range(pred_dim)),[ x.predicate for x in pred_f]+ [target,"false"]+invented_names))
+    pred_dict : Dict[int, str] = dict(zip(list(range(pred_dim)),["false",target]+[ x.predicate for x in pred_f]+invented_names))
     atom_dict = dict(zip(list(range(atom_dim)),list(constants_f)))
     rules_dict = dict(zip(list(range(rules_dim)),[(x,y,z,w) for x in pred_dict.values() \
     for y in pred_dict.values() for z in range(9) for w in range(9)]))
