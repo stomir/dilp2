@@ -93,34 +93,51 @@ def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
                 unused = (x for x in range(0, vars) if x not in {arg1, arg2})
                 for u in unused:
                     v = v.unsqueeze(u + 1)
-            logging.debug(f"{i=} {arg1=} {arg2=} {v.shape=}")
+            logging.debug(f"{i=} {arg1=} {arg2=} {v.shape=} {val.shape=}")
             v = torch.broadcast_to(v, shape) #type: ignore
             v = v.unsqueeze(1)
             ret.append(v)
             i += 1
     return torch.cat(ret, dim=1)
 
+def infer_single_step_optimized(val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, vars : int = 3,
+    ignored : Set[int] = set()) -> torch.Tensor:
+    ex_val = extend_val(val, vars = vars)
+    ret = []
+    for pred in range(0, len(val)):
+        if pred in ignored or len(rulebook.body_predicates[pred]) == 0:
+            ret.append(torch.zeros(val.shape[1:]).unsqueeze(0))
+            continue
+        small_rulebook = Rulebook(body_predicates=rulebook.body_predicates[pred], variable_choices=rulebook.variable_choices[pred])
+        val2 = infer_single_step(ex_val = ex_val, rules = small_rulebook, rule_weights = weights[pred])
+        ret.append(val2.unsqueeze(0))
+    logging.debug(f"{[x.shape for x in ret]=} {val.shape=}")
+    return disjunction2(val, torch.cat(ret, dim=0))
+    
+
 def infer_single_step(ex_val : torch.Tensor, rules : Rulebook, rule_weights : torch.Tensor) -> torch.Tensor:
     logging.debug(f"{ex_val.shape=} {rules.body_predicates.shape=} {rules.variable_choices.shape=}")
     ex_val = ex_val[rules.body_predicates, rules.variable_choices]
     logging.debug(f"{ex_val.shape=}")
     #conjuction of body predictes
-    ex_val = conjunction_dim(ex_val, dim = 3)
+    ex_val = conjunction_dim(ex_val, dim = -4)
     #existential quantification
     ex_val = disjunction_dim(ex_val, dim = -1)
     #rule weighing
     rule_weights = rule_weights.softmax(-1).unsqueeze(-1).unsqueeze(-1)
     ex_val = ex_val * rule_weights
-    ex_val = ex_val.sum(dim = 2)
+    ex_val = ex_val.sum(dim = -3)
     #disjunction on clauses
-    ex_val = disjunction_dim(ex_val, dim = 1)
+    ex_val = disjunction_dim(ex_val, dim = -3)
+    logging.debug(f"returning {ex_val.shape=}")
     return ex_val
 
 def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, vars : int = 3) -> torch.Tensor:
     val = base_val
     for i in range(0, steps):
-        val2 = extend_val(val, vars)
-        val2 = infer_single_step(val2, rulebook, weights)
+        #val2 = extend_val(val, vars)
+        val2 = infer_single_step_optimized(val = val, rulebook = rulebook, weights = weights)
+        assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         val = disjunction2(val, val2)
     return val
         

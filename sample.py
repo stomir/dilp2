@@ -101,6 +101,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     for y in pred_dict.values() if x != "false" for z in range(9) for w in range(9)]))
     var_dict   = dict(zip(list(range(9)),[ (x,y) for x in var_names for y in var_names]))
 
+    print(f"{list(pred_dict.items())=}")
+
     # reverse version of the dictionaries
     pred_dict_rev,atom_dict_rev,rules_dict_rev,var_dict_rev = revDict(pred_dict),revDict(atom_dict), \
     revDict(rules_dict),revDict(var_dict)
@@ -131,9 +133,6 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             targets[x][y+1] = atom_dict_rev[target_facts[x].terms[y]]
         if x < len(P):
             target_values[x] = 1
-    
-    for i in range(0, len(base_val)):
-        logging.debug(f"{pred_dict[i]=} {base_val[i]=}")
 
     rulebook = dilp.Rulebook(body_predicates,variable_choices)
     logging.debug(f"{rulebook.body_predicates.shape=},{rulebook.variable_choices.shape=}")
