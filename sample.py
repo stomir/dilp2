@@ -142,14 +142,14 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.zero_grad()
         mse_loss = dilp.loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
         mse_loss.backward()
-        with torch.no_grad():
-            if weights.grad is not None:
-                print(f"{weights.grad[2]}")
-            #weights.grad = weights.grad / torch.max(weights.grad.norm(2, dim=-1, keepdim=True), torch.as_tensor(1e-8))
-            pass
+        # with torch.no_grad():
+        #     if weights.grad is not None:
+        #         print(f"{weights.grad[2]}")
+        #     #weights.grad = weights.grad / torch.max(weights.grad.norm(2, dim=-1, keepdim=True), torch.as_tensor(1e-8))
+        #     pass
         opt.step()
         print(f"loss: {mse_loss.item()}")
-        print(f"{weights[2]=}")
+        #print(f"{weights[2]=}")
 
     dilp.print_program(rulebook, weights, pred_dict)
 
