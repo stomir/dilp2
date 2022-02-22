@@ -110,6 +110,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         for y in range(atom_dim):
             for z in range(atom_dim):
                 if Atom([atom_dict[y],atom_dict[z]],pred_dict[x]) in true_facts:
+                    logging.debug(f"{pred_dict[x]=} {atom_dict[y]=} {atom_dict[z]=}")
                     base_val[x][y][z] = 1
 
     for x in range(pred_dim):
