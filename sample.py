@@ -66,7 +66,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             raise Exception('The number of invented predicates must be >= 0')
 
 
-    B, pred_f, constants_f = process_file('%s/facts.dilp' % task)
+    true_facts, pred_f, constants_f = process_file('%s/facts.dilp' % task)
     P, target_p, constants_p = process_file('%s/positive.dilp' % task)
     N, target_n, constants_n = process_file('%s/negative.dilp' % task)
 
@@ -84,16 +84,15 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     count_examples = len(P)+len(N)
     pred_dim = len(pred_f)+inv+2
     atom_dim = len(constants_f)
-    rules_dim = (pred_dim**2)*81
+    rules_dim = ((pred_dim-1)**2)*81
     fact_names = [ x.predicate for x in pred_f]
-    true_facts = B
     target_facts = P+N
     var_names = [Term(True, f'X_{i}') for i in range(3)]
 
     pred_dict : Dict[int, str] = dict(zip(list(range(pred_dim)),["false",target]+[ x.predicate for x in pred_f]+invented_names))
     atom_dict = dict(zip(list(range(atom_dim)),list(constants_f)))
-    rules_dict = dict(zip(list(range(rules_dim)),[(x,y,z,w) for x in pred_dict.values() \
-    for y in pred_dict.values() for z in range(9) for w in range(9)]))
+    rules_dict = dict(zip(list(range(rules_dim)),[(x,y,z,w) for x in pred_dict.values() if x != "false"\
+    for y in pred_dict.values() if x != "false" for z in range(9) for w in range(9)]))
     var_dict   = dict(zip(list(range(9)),[ (x,y) for x in var_names for y in var_names]))
 
     # reverse version of the dictionaries
@@ -135,7 +134,6 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
     weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand(size=(pred_dim,2,rules_dim), device=dev))
 
-    opt = torch.optim.RMSprop([weights], lr=1e-2)
     #opt = torch.optim.SGD([weights], lr=1e-2)
     print(f"done {rulebook.body_predicates.shape=} {rulebook.variable_choices.shape=}")
     opt = torch.optim.RMSprop([weights], lr=0.05)
