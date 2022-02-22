@@ -149,9 +149,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         #         print(f"{weights.grad[2]}")
         #     #weights.grad = weights.grad / torch.max(weights.grad.norm(2, dim=-1, keepdim=True), torch.as_tensor(1e-8))
         #     pass
+        torch.nn.utils.clip_grad.clip_grad_norm_([weights], 1e-2)
         opt.step()
         print(f"loss: {mse_loss.item()} norm loss: {n_loss.item()}")
-        #print(f"{weights[2]=}")
 
     dilp.print_program(rulebook, weights, pred_dict)
 
