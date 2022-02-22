@@ -71,19 +71,26 @@ def main(epochs : int = 100, steps : int = 5, cuda : bool = False):
         0.0
     ], device=dev)
 
-    weights = torch.nn.Parameter(torch.rand(size=(4,2,11), device=dev))
+    #weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand(size=(4,2,11), device=dev))
+    weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=0.0, std=1.0, size=(4,2,11), device=dev))
     #weights = torch.nn.Parameter(torch.zeros(4,2,11))
     #with torch.no_grad():
     #    weights[2][0][2] = 1000
     #    weights[2][1][0] = 1000
 
-    opt = torch.optim.RMSprop([weights], lr=0.05)
+    opt = torch.optim.RMSprop([weights], lr=1e-2)
+    #opt = torch.optim.SGD([weights], lr=1e-2)
     for epoch in tqdm(range(0, epochs)):
         opt.zero_grad()
         mse_loss = loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
         mse_loss.backward()
+        with torch.no_grad():
+            print(f"{weights.grad[2]}")
+            #weights.grad = weights.grad / torch.max(weights.grad.norm(2, dim=-1, keepdim=True), torch.as_tensor(1e-8))
+            pass
         opt.step()
         print(f"loss: {mse_loss.item()}")
+        print(f"{weights[2]=}")
 
     print_program(rulebook, weights, pred_names)
 
