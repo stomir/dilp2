@@ -103,7 +103,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     base_val = torch.zeros([pred_dim, atom_dim, atom_dim], dtype=torch.float, device=dev)
     body_predicates = torch.zeros([pred_dim, 2, rules_dim,2], dtype=torch.long, device=dev)
     variable_choices = torch.zeros([pred_dim, 2, rules_dim,2], dtype=torch.long, device=dev)
-    targets = torch.full([count_examples,target_arity+1], pred_dict_rev[target], dtype=torch.float, device=dev)
+    targets = torch.full([count_examples,target_arity+1], pred_dict_rev[target], dtype=torch.long, device=dev)
     target_values = torch.zeros([count_examples], dtype=torch.float, device=dev)
 
     for x in range(pred_dim):
@@ -130,7 +130,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     logging.debug(f"{rulebook.body_predicates.shape=},{rulebook.variable_choices.shape=}")
 
     #This should not be used. Instead one of the dictionaries should be used.
-    pred_names = pred_dict_rev.keys()
+    #pred_names = list(pred_dict_rev.keys())
 
     weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand(size=(pred_dim,2,rules_dim), device=dev))
 
@@ -151,7 +151,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         print(f"loss: {mse_loss.item()}")
         print(f"{weights[2]=}")
 
-    dilp.print_program(rulebook, weights, pred_names)
+    dilp.print_program(rulebook, weights, pred_dict)
 
 if __name__ == "__main__":
     fire.Fire(main)
