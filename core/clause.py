@@ -47,7 +47,6 @@ class Clause():
 
     @property
     def variables(self):
-        '''Return all the variable used in the clause
-        '''
+        '''Return all the variable used in the clause'''
 
         return self._variable
