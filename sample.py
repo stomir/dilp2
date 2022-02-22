@@ -125,6 +125,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             targets[x][y+1] = atom_dict_rev[target_facts[x].terms[y]]
         if x < len(P):
             target_values[x] = 1
+    
+    for i in range(0, len(base_val)):
+        logging.debug(f"{pred_dict[i]=} {base_val[i]=}")
 
     rulebook = dilp.Rulebook(body_predicates,variable_choices)
     logging.debug(f"{rulebook.body_predicates.shape=},{rulebook.variable_choices.shape=}")
@@ -136,7 +139,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
     print(f"done {rulebook.body_predicates.shape=} {rulebook.variable_choices.shape=}")
-    opt = torch.optim.RMSprop([weights], lr=0.05)
+    #opt = torch.optim.RMSprop([weights], lr=0.05)
+    opt = torch.optim.Adam([weights], lr=0.05)
     for epoch in tqdm(range(0, epochs)):
         opt.zero_grad()
         mse_loss = dilp.loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
@@ -156,9 +160,13 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     dilp.print_program(rulebook, weights, pred_dict)
 
 def norm_loss(weights : torch.Tensor) -> torch.Tensor:
-    x = weights.softmax(-1)
-    x = x * (1-x)
-    return x.mean()
+    #x = weights.softmax(-1)
+    x = weights
+    #x = x * (1-x)
+    logsoftmax = x.log_softmax(-1)
+    softmax = x.softmax(-1)
+    x = 1/(softmax * logsoftmax)
+    return -x.mean()
 
 if __name__ == "__main__":
     fire.Fire(main)
