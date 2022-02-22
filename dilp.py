@@ -61,15 +61,12 @@ def set_norm(norm_name : str):
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]
 
-def rule_str(rs : Sequence[int], predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
-    lines = []
-    for clause in range(0, rulebook.body_predicates.shape[1]):
-        ret = []
-        for i in range(0, rulebook.body_predicates.shape[3]):
-            vs = ','.join(map(lambda v: chr(ord('A')+v),  var_choices(int(rulebook.variable_choices[predicate,clause,rs[clause],i]))))
-            ret.append(f'{pred_names[int(rulebook.body_predicates[predicate,clause,rs[clause],i].item())]}({vs})')
-        lines.append(f"{pred_names[predicate]}(A,B) :- {','.join(ret)}")
-    return '\n'.join(lines)
+def rule_str(rule : int, clause : int, predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
+    ret = []
+    for i in range(0, rulebook.body_predicates.shape[3]):
+        vs = ','.join(map(lambda v: chr(ord('A')+v),  var_choices(int(rulebook.variable_choices[predicate,clause,rule,i]))))
+        ret.append(f'{pred_names[int(rulebook.body_predicates[predicate,clause,rule,i].item())]}({vs})')
+    return ','.join(ret)
 
 def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
     i = 0
@@ -130,7 +127,13 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
     logging.debug(f"{torch.cat((target_values.unsqueeze(1), preds.unsqueeze(1)), dim=1)=}")
     return (preds - target_values).square().mean()
     
-def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str]):
-    weights = weights.detach().cpu()
+def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 3):
+    weights = weights.detach().softmax(-1).cpu()
     for pred in range(0, rulebook.body_predicates.shape[0]):
-        print(rule_str(rs = weights[pred].max(dim = -1)[1].numpy(), predicate=pred, rulebook=rulebook, pred_names=pred_names))
+        pred_name = pred_names[pred]
+        for clause in range(0, rulebook.body_predicates.shape[1]):
+            values, idxs = weights[pred][clause].sort(descending=True)
+            ret = []
+            for elem in range(0, elements):
+                ret.append(f"[{rule_str(int(idxs[elem]), clause, pred, rulebook, pred_names)} x{values[elem].item():.5f}]")
+            print(f"{pred_name.rjust(10, ' ')}(A,B) :- " + ' '.join(x.ljust(50, ' ') for x in ret))

@@ -53,7 +53,8 @@ def process_file(filename):
     return atoms, predicates, constants
 
 def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 10,
-        debug : bool = False, norm : str = 'max', norm_weight : float = 0.0):
+        debug : bool = False, norm : str = 'max', norm_weight : float = 0.0,
+        optim : str = 'adam', lr : float = 0.05):
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -139,8 +140,13 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
     print(f"done {rulebook.body_predicates.shape=} {rulebook.variable_choices.shape=}")
-    #opt = torch.optim.RMSprop([weights], lr=0.05)
-    opt = torch.optim.Adam([weights], lr=0.05)
+    if optim == 'rmsprop':
+        opt : torch.optim.Optimizer = torch.optim.RMSprop([weights], lr=lr)
+    elif optim == 'adam':
+        opt = torch.optim.Adam([weights], lr=lr)
+    else:
+        assert False
+
     for epoch in tqdm(range(0, epochs)):
         opt.zero_grad()
         mse_loss = dilp.loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
