@@ -64,7 +64,7 @@ def rule_str(rs : Sequence[int], predicate : int, rulebook : Rulebook, pred_name
         ret = []
         for i in range(0, rulebook.body_predicates.shape[3]):
             vs = ','.join(map(lambda v: chr(ord('A')+v),  var_choices(int(rulebook.variable_choices[predicate,clause,rs[clause],i]))))
-            ret.append(f'{pred_names[rulebook.body_predicates[predicate,clause,rs[clause],i].item()]}({vs})')
+            ret.append(f'{pred_names[int(rulebook.body_predicates[predicate,clause,rs[clause],i].item())]}({vs})')
         lines.append(f"{pred_names[predicate]}(A,B) :- {','.join(ret)}")
     return '\n'.join(lines)
 
@@ -126,7 +126,7 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
     return (preds - target_values).square().mean()
     
-def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : List[str]):
+def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str]):
     weights = weights.detach().cpu()
     for pred in range(0, rulebook.body_predicates.shape[0]):
         print(rule_str(rs = weights[pred].max(dim = -1)[1].numpy(), predicate=pred, rulebook=rulebook, pred_names=pred_names))
