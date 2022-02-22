@@ -53,10 +53,15 @@ def process_file(filename):
     return atoms, predicates, constants
 
 def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 10,
-        debug : bool = False, norm : str = 'max', norm_weight : float = 0.0,
-        optim : str = 'adam', lr : float = 0.05):
+        debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
+        optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
+        seed : Optional[int] = 0, dropout : float = 0):
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    if seed is not None:
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed) #type: ignore
 
     dilp.set_norm(norm)
 
@@ -136,7 +141,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     #This should not be used. Instead one of the dictionaries should be used.
     #pred_names = list(pred_dict_rev.keys())
 
-    weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand(size=(pred_dim,2,rules_dim), device=dev))
+    weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand(size=(pred_dim,2,rules_dim), device=dev)*10)
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
     print(f"done {rulebook.body_predicates.shape=} {rulebook.variable_choices.shape=}")
@@ -149,7 +154,12 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
     for epoch in tqdm(range(0, epochs)):
         opt.zero_grad()
-        mse_loss = dilp.loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
+        if dropout != 0:
+            moved = weights + torch.rand(weights.shape, device=weights.device) * dropout
+        else:
+            moved = weights
+        mse_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
+        mse_loss = mse_loss.sum()
         mse_loss.backward()
 
         n_loss = norm_loss(weights) * norm_weight
@@ -159,19 +169,27 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         #         print(f"{weights.grad[2]}")
         #     #weights.grad = weights.grad / torch.max(weights.grad.norm(2, dim=-1, keepdim=True), torch.as_tensor(1e-8))
         #     pass
-        torch.nn.utils.clip_grad.clip_grad_norm_([weights], 1e-2)
+        if clip is not None:
+            torch.nn.utils.clip_grad.clip_grad_norm_([weights], clip)
         opt.step()
-        print(f"loss: {mse_loss.item()} norm loss: {n_loss.item()}")
+        print(f"mse loss: {mse_loss.item()} norm loss: {n_loss.item()}")
 
     dilp.print_program(rulebook, weights, pred_dict)
+
+    _, report = dilp.loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
+    print('weighted report:\n', report.detach().cpu().numpy())
+    crisp = torch.nn.functional.one_hot(weights.max(-1)[1], weights.shape[-1])
+    crisp = crisp.float().where(crisp == 1, torch.as_tensor(-float('inf'), device=crisp.device))
+    _, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=steps)
+    print('crisp report:\n', crisp_report.detach().cpu().numpy())
 
 def norm_loss(weights : torch.Tensor) -> torch.Tensor:
     #x = weights.softmax(-1)
     x = weights
     #x = x * (1-x)
     logsoftmax = x.log_softmax(-1)
-    softmax = x.softmax(-1)
-    x = 1/(softmax * logsoftmax)
+    softmax = logsoftmax.exp()
+    x = (softmax * logsoftmax)
     return -x.mean()
 
 if __name__ == "__main__":

@@ -44,7 +44,7 @@ conjunction_dim = conjunction_dim_max
 
 def set_norm(norm_name : str):
     global disjunction2, disjunction_dim, conjunction2, conjunction_dim
-    assert norm_name in {'max', 'prod'}
+    assert norm_name in {'max', 'prod', 'mixed'}
     if norm_name == 'max':
         disjunction2 = disjunction2_max
         disjunction_dim = disjunction_dim_max
@@ -53,6 +53,11 @@ def set_norm(norm_name : str):
     elif norm_name == 'prod':
         disjunction2 = disjunction2_prod
         disjunction_dim = disjunction_dim_prod
+        conjunction2 = conjunction2_prod
+        conjunction_dim = conjunction_dim_prod
+    elif norm_name == 'mixed':
+        disjunction2 = disjunction2_max
+        disjunction_dim = disjunction_dim_max
         conjunction2 = conjunction2_prod
         conjunction_dim = conjunction_dim_prod
     else:
@@ -110,22 +115,22 @@ def infer_single_step(ex_val : torch.Tensor, rules : Rulebook, rule_weights : to
     #disjunction on clauses
     ex_val = disjunction_dim(ex_val, dim = 1)
     return ex_val
+
+def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, vars : int = 3) -> torch.Tensor:
+    val = base_val
+    for i in range(0, steps):
+        val2 = extend_val(val, vars)
+        val2 = infer_single_step(val2, rulebook, weights)
+        val = disjunction2(val, val2)
+    return val
         
 def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
         targets : torch.Tensor,
         target_values : torch.Tensor,
-        steps : int = 2, vars : int = 3) -> torch.Tensor:
-    val = base_val
-    vals = []
-    for i in range(0, steps):
-        val2 = extend_val(val, vars)
-        val2 = infer_single_step(val2, rulebook, weights)
-        vals.append(val2.unsqueeze(0))
-        val = disjunction2(val, val2)
-    val = disjunction_dim(torch.cat(vals, dim=0), dim=0)
+        steps : int = 2, vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
+    val = infer_steps(steps, base_val, rulebook, weights, vars)
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
-    logging.debug(f"{torch.cat((target_values.unsqueeze(1), preds.unsqueeze(1)), dim=1)=}")
-    return (preds - target_values).square().mean()
+    return (preds - target_values).square(), torch.cat((target_values.unsqueeze(1), preds.unsqueeze(1)), dim=1)
     
 def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 3):
     weights = weights.detach().softmax(-1).cpu()
