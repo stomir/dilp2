@@ -58,13 +58,13 @@ def set_norm(norm_name : str):
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]
 
-def rule_str(rs : Sequence[int], predicate : int, rulebook : Rulebook, pred_names : List[str]) -> str:
+def rule_str(rs : Sequence[int], predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
     lines = []
     for clause in range(0, rulebook.body_predicates.shape[1]):
         ret = []
         for i in range(0, rulebook.body_predicates.shape[3]):
             vs = ','.join(map(lambda v: chr(ord('A')+v),  var_choices(int(rulebook.variable_choices[predicate,clause,rs[clause],i]))))
-            ret.append(f'{pred_names[rulebook.body_predicates[predicate,clause,rs[clause],i]]}({vs})')
+            ret.append(f'{pred_names[rulebook.body_predicates[predicate,clause,rs[clause],i].item()]}({vs})')
         lines.append(f"{pred_names[predicate]}(A,B) :- {','.join(ret)}")
     return '\n'.join(lines)
 
