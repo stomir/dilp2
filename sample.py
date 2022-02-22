@@ -125,6 +125,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             targets[x][y+1] = atom_dict_rev[target_facts[x].terms[y]]
         if x < len(P):
             target_values[x] = 1
+    
+    for i in range(0, len(base_val)):
+        logging.debug(f"{pred_dict[i]=} {base_val[i]=}")
 
     rulebook = dilp.Rulebook(body_predicates,variable_choices)
     logging.debug(f"{rulebook.body_predicates.shape=},{rulebook.variable_choices.shape=}")
