@@ -50,10 +50,10 @@ def set_norm(norm_name : str):
         conjunction2 = conjunction2_max
         conjunction_dim = conjunction_dim_max
     elif norm_name == 'prod':
-        disjunction2 = disjunction2_max
-        disjunction_dim = disjunction_dim_max
-        conjunction2 = conjunction2_max
-        conjunction_dim = conjunction_dim_max
+        disjunction2 = disjunction2_prod
+        disjunction_dim = disjunction_dim_prod
+        conjunction2 = conjunction2_prod
+        conjunction_dim = conjunction_dim_prod
 
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]
@@ -64,7 +64,7 @@ def rule_str(rs : Sequence[int], predicate : int, rulebook : Rulebook, pred_name
         ret = []
         for i in range(0, rulebook.body_predicates.shape[3]):
             vs = ','.join(map(lambda v: chr(ord('A')+v),  var_choices(int(rulebook.variable_choices[predicate,clause,rs[clause],i]))))
-            ret.append(f'{pred_names[rulebook.body_predicates[predicate,clause,rs[clause],i].item()]}({vs})')
+            ret.append(f'{pred_names[int(rulebook.body_predicates[predicate,clause,rs[clause],i].item())]}({vs})')
         lines.append(f"{pred_names[predicate]}(A,B) :- {','.join(ret)}")
     return '\n'.join(lines)
 
@@ -124,9 +124,10 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
         val = disjunction2(val, val2)
     val = disjunction_dim(torch.cat(vals, dim=0), dim=0)
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
+    logging.debug(f"{torch.cat((target_values.unsqueeze(1), preds.unsqueeze(1)))=}")
     return (preds - target_values).square().mean()
     
-def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : List[str]):
+def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str]):
     weights = weights.detach().cpu()
     for pred in range(0, rulebook.body_predicates.shape[0]):
         print(rule_str(rs = weights[pred].max(dim = -1)[1].numpy(), predicate=pred, rulebook=rulebook, pred_names=pred_names))

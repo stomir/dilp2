@@ -53,7 +53,7 @@ def process_file(filename):
     return atoms, predicates, constants
 
 def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 10,
-        debug : bool = False, norm : str = 'max'):
+        debug : bool = False, norm : str = 'max', norm_weight : float = 0.0):
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -152,6 +152,11 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         #print(f"{weights[2]=}")
 
     dilp.print_program(rulebook, weights, pred_dict)
+
+def norm_loss(weights : torch.Tensor) -> torch.Tensor:
+    x = weights.softmax(-1)
+    x = x * (1-x)
+    return x.sum()
 
 if __name__ == "__main__":
     fire.Fire(main)
