@@ -1,10 +1,12 @@
 import fire #type: ignore
-from dilp import *
+import dilp
 import torch
 from tqdm import tqdm #type: ignore
-import pyparsing as pp
-import  torch
+import pyparsing as pp #type: ignore
+import torch
+import logging
 from core import Term, Atom
+from typing import *
 
 # relationship will refer to 'track' in all of your examples
 relationship = pp.Word(pp.alphas).setResultsName('relationship', listAllMatches=True)
@@ -50,9 +52,12 @@ def process_file(filename):
             constants.update([Term(False, term) for term in result['arguments'][idx]])
     return atoms, predicates, constants
 
-def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 10, debug : bool = False):
+def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 10,
+        debug : bool = False, norm : str = 'max'):
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    dilp.set_norm(norm)
 
     dev = torch.device(0) if cuda else torch.device('cpu')
 
@@ -113,7 +118,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                 for w in range(2):
                     body_predicates[x][y][z][w] = pred_dict_rev["false"] if pred_dict[x] in \
                     fact_names else pred_dict_rev[rules_dict[z][w]]
-                    variable_choices[x][y][z][w] = rules_dict[z][2+w]
+                    variable_choices[x][y][z][w] = int(rules_dict[z][2+w])
 
     for x in range(len(target_facts)):
         for y in range(target_arity):
@@ -121,13 +126,13 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         if x < len(P):
             target_values[x] = 1
 
-    rulebook = Rulebook(body_predicates,variable_choices)
+    rulebook = dilp.Rulebook(body_predicates,variable_choices)
     logging.debug(f"{rulebook.body_predicates.shape=},{rulebook.variable_choices.shape=}")
 
     #This should not be used. Instead one of the dictionaries should be used.
     pred_names = pred_dict_rev.keys()
 
-    weights = torch.nn.Parameter(torch.rand(size=(pred_dim,2,rules_dim), device=dev))
+    weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand(size=(pred_dim,2,rules_dim), device=dev))
 
     opt = torch.optim.RMSprop([weights], lr=1e-2)
     #opt = torch.optim.SGD([weights], lr=1e-2)
@@ -135,17 +140,18 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     opt = torch.optim.RMSprop([weights], lr=0.05)
     for epoch in tqdm(range(0, epochs)):
         opt.zero_grad()
-        mse_loss = loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
+        mse_loss = dilp.loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
         mse_loss.backward()
         with torch.no_grad():
-            print(f"{weights.grad[2]}")
+            if weights.grad is not None:
+                print(f"{weights.grad[2]}")
             #weights.grad = weights.grad / torch.max(weights.grad.norm(2, dim=-1, keepdim=True), torch.as_tensor(1e-8))
             pass
         opt.step()
         print(f"loss: {mse_loss.item()}")
         print(f"{weights[2]=}")
 
-    print_program(rulebook, weights, pred_names)
+    dilp.print_program(rulebook, weights, pred_names)
 
 if __name__ == "__main__":
     fire.Fire(main)
