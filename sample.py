@@ -117,7 +117,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             for z in range(rules_dim):
                 for w in range(2):
                     body_predicates[x][y][z][w] = pred_dict_rev["false"] if pred_dict[x] in \
-                    fact_names else pred_dict_rev[rules_dict[z][w]]
+                    fact_names or pred_dict[x] == "false" else pred_dict_rev[rules_dict[z][w]]
                     variable_choices[x][y][z][w] = int(rules_dict[z][2+w])
 
     for x in range(len(target_facts)):
