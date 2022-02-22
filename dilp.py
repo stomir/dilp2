@@ -10,29 +10,62 @@ class Rulebook(NamedTuple):
         return Rulebook(
             body_predicates = self.body_predicates.to(device),
             variable_choices = self.variable_choices.to(device))
-
-def disjuction2(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
+#'''
+def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return 1 - (1 - a) * (1 - b)
 
-def disjunction_dim(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+def disjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return 1 - ((1 - a).prod(dim = dim))
 
-def conjuction2(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
+def conjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a * b
-def conjunction_dim(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return a.prod(dim=dim)
+#'''
+
+#'''
+def disjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
+    return torch.max(a, b)
+
+def disjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+    return torch.max(a, dim=dim)[0]
+
+def conjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
+    return torch.min(a, b)
+
+def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+    return a.min(dim=dim)[0]
+#'''
+
+disjunction2 = disjunction2_max
+disjunction_dim = disjunction_dim_max
+conjunction2 = conjunction2_max
+conjunction_dim = conjunction_dim_max
+
+def set_norm(norm_name : str):
+    global disjunction2, disjunction_dim, conjunction2, conjunction_dim
+    if norm_name == 'max':
+        disjunction2 = disjunction2_max
+        disjunction_dim = disjunction_dim_max
+        conjunction2 = conjunction2_max
+        conjunction_dim = conjunction_dim_max
+    elif norm_name == 'prod':
+        disjunction2 = disjunction2_max
+        disjunction_dim = disjunction_dim_max
+        conjunction2 = conjunction2_max
+        conjunction_dim = conjunction_dim_max
 
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]
 
-def rule_str(rs : List[int], predicate : int, rulebook : Rulebook, pred_names : List[str]) -> str:
+def rule_str(rs : Sequence[int], predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
     lines = []
     for clause in range(0, rulebook.body_predicates.shape[1]):
         ret = []
         for i in range(0, rulebook.body_predicates.shape[3]):
             vs = ','.join(map(lambda v: chr(ord('A')+v),  var_choices(int(rulebook.variable_choices[predicate,clause,rs[clause],i]))))
-            ret.append(f'{pred_names[rulebook.body_predicates[predicate,clause,rs[clause],i]]}({vs})')
-        lines.append(f"{pred_names[predicate]}(A, B) :- {','.join(ret)}")
+            ret.append(f'{pred_names[int(rulebook.body_predicates[predicate,clause,rs[clause],i].item())]}({vs})')
+        lines.append(f"{pred_names[predicate]}(A,B) :- {','.join(ret)}")
     return '\n'.join(lines)
 
 def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
@@ -83,15 +116,17 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
         target_values : torch.Tensor,
         steps : int = 2, vars : int = 3) -> torch.Tensor:
     val = base_val
+    vals = []
     for i in range(0, steps):
         val2 = extend_val(val, vars)
         val2 = infer_single_step(val2, rulebook, weights)
-        val = disjuction2(val, val2)
-        del val2
+        vals.append(val2.unsqueeze(0))
+        val = disjunction2(val, val2)
+    val = disjunction_dim(torch.cat(vals, dim=0), dim=0)
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
     return (preds - target_values).square().mean()
     
-def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : List[str]):
+def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str]):
     weights = weights.detach().cpu()
     for pred in range(0, rulebook.body_predicates.shape[0]):
-        print(rule_str(rs = weights[pred].max(dim = -1)[1], predicate=pred, rulebook=rulebook, pred_names=pred_names))
+        print(rule_str(rs = weights[pred].max(dim = -1)[1].numpy(), predicate=pred, rulebook=rulebook, pred_names=pred_names))
