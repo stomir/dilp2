@@ -44,6 +44,7 @@ conjunction_dim = conjunction_dim_max
 
 def set_norm(norm_name : str):
     global disjunction2, disjunction_dim, conjunction2, conjunction_dim
+    assert norm_name in {'max', 'prod'}
     if norm_name == 'max':
         disjunction2 = disjunction2_max
         disjunction_dim = disjunction_dim_max
@@ -54,6 +55,8 @@ def set_norm(norm_name : str):
         disjunction_dim = disjunction_dim_prod
         conjunction2 = conjunction2_prod
         conjunction_dim = conjunction_dim_prod
+    else:
+        assert False
 
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]
