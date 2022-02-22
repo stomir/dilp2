@@ -151,7 +151,6 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             pass
         opt.step()
         print(f"loss: {mse_loss.item()}")
-        print(f"{weights[2]=}")
 
     dilp.print_program(rulebook, weights, pred_dict)
 
