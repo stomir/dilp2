@@ -50,7 +50,7 @@ def process_file(filename):
             constants.update([Term(False, term) for term in result['arguments'][idx]])
     return atoms, predicates, constants
 
-def main(epochs : int = 100, steps : int = 5, cuda : bool = False, task : str = "", inv : int = 10 ):
+def main(epochs : int = 100, steps : int = 1, cuda : bool = False, task : str = "", inv : int = 10 ):
     dev = torch.device(0) if cuda else torch.device('cpu')
 
     if task == "":
@@ -119,7 +119,6 @@ def main(epochs : int = 100, steps : int = 5, cuda : bool = False, task : str = 
         if x < len(P):
             target_values[x] = 1
 
-    print("done")
     rulebook = Rulebook(body_predicates,variable_choices)
     logging.debug(f"{rulebook.body_predicates.shape=},{rulebook.variable_choices.shape=}")
 
@@ -131,7 +130,7 @@ def main(epochs : int = 100, steps : int = 5, cuda : bool = False, task : str = 
     #with torch.no_grad():
     #    weights[2][0][2] = 1000
     #    weights[2][1][0] = 1000
-
+    print("done")
     opt = torch.optim.RMSprop([weights], lr=0.05)
     for epoch in tqdm(range(0, epochs)):
         opt.zero_grad()
