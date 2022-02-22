@@ -118,7 +118,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             for z in range(rules_dim):
                 for w in range(2):
                     body_predicates[x][y][z][w] = pred_dict_rev["false"] if pred_dict[x] in \
-                    fact_names else pred_dict_rev[rules_dict[z][w]]
+                    fact_names or pred_dict[x] == "false" else pred_dict_rev[rules_dict[z][w]]
                     variable_choices[x][y][z][w] = int(rules_dict[z][2+w])
 
     for x in range(len(target_facts)):
@@ -143,15 +143,14 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.zero_grad()
         mse_loss = dilp.loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
         mse_loss.backward()
-
-        n_loss = norm_loss(weights)
-        (n_loss * norm_weight).backward()
-
-        with torch.no_grad():
-            #weights.grad = weights.grad / torch.max(weights.grad.norm(2, dim=-1, keepdim=True), torch.as_tensor(1e-8))
-            pass
+        # with torch.no_grad():
+        #     if weights.grad is not None:
+        #         print(f"{weights.grad[2]}")
+        #     #weights.grad = weights.grad / torch.max(weights.grad.norm(2, dim=-1, keepdim=True), torch.as_tensor(1e-8))
+        #     pass
         opt.step()
         print(f"loss: {mse_loss.item()}")
+        #print(f"{weights[2]=}")
 
     dilp.print_program(rulebook, weights, pred_dict)
 
