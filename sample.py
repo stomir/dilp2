@@ -158,7 +158,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 def norm_loss(weights : torch.Tensor) -> torch.Tensor:
     x = weights.softmax(-1)
     x = x * (1-x)
-    return x.sum()
+    return x.mean()
 
 if __name__ == "__main__":
     fire.Fire(main)
