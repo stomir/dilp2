@@ -5,8 +5,9 @@ from tqdm import tqdm #type: ignore
 import pyparsing as pp #type: ignore
 import torch
 import logging
-from core import Term, Atom
+#from core import Term, Atom
 from typing import *
+import itertools
 
 # relationship will refer to 'track' in all of your examples
 relationship = pp.Word(pp.alphas).setResultsName('relationship', listAllMatches=True)
@@ -34,27 +35,27 @@ prolog_sentences = pp.OneOrMore(sentence)
 def revDict(d):
     return {value: key for (key,value) in d.items()}
 
-def process_file(filename):
-    atoms = []
-    predicates = set()
-    constants = set()
+def process_file(filename) -> Tuple[List[Tuple[str,List[str]]],Set[str],Set[str]]:
+    atoms : List[Tuple[str,List[str]]] = []
+    predicates : Set[str] = set()
+    constants : Set[str] = set()
     with open(filename) as f:
         data = f.read().replace('\n', '')
         result = prolog_sentences.parseString(data)
         for idx in range(len(result['facts'])):
             fact = result['facts'][idx]
             predicate = result['relationship'][idx]
-            terms = [Term(False, term) for term in result['arguments'][idx]]
-            term_var = [Term(True, f'X_{i}') for i in range(len(terms))]
+            terms = result['arguments'][idx]
 
-            predicates.add(Atom(term_var, predicate))
-            atoms.append(Atom(terms, predicate))
-            constants.update([Term(False, term) for term in result['arguments'][idx]])
+            predicates.add(predicate)
+            atoms.append((predicate, terms))
+            constants.update((term for term in result['arguments'][idx]))
     return atoms, predicates, constants
 
 def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 10,
         debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
+        unary : Set[str] = set(),
         seed : Optional[int] = 0, dropout : float = 0):
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -85,100 +86,121 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             'Constants not in fact file exists in positive/negative file')
 
     invented_names= ["inv_"+str(x) for x in range(inv)]
-    target = list(target_p)[0].predicate
-    target_arity = P[0].arity
+    target = next(iter(target_p))
+    target_arity = len(P[0][1])
     count_examples = len(P)+len(N)
-    pred_dim = len(pred_f)+inv+2
+    pred_dim = len(pred_f)+inv+1
     atom_dim = len(constants_f)
     rules_dim = ((pred_dim-1)**2)*81
-    fact_names = [ x.predicate for x in pred_f]
+    #fact_names = [ x.predicate for x in pred_f]
     target_facts = P+N
-    var_names = [Term(True, f'X_{i}') for i in range(3)]
+    #var_names = [Term(True, f'X_{i}') for i in range(3)]
 
-    pred_dict : Dict[int, str] = dict(zip(list(range(pred_dim)),["false",target]+[ x.predicate for x in pred_f]+invented_names))
+    pred_dict : Dict[int, str] = dict(zip(list(range(pred_dim)),[target]+list(pred_f)+invented_names))
     atom_dict = dict(zip(list(range(atom_dim)),list(constants_f)))
-    rules_dict = dict(zip(list(range(rules_dim)),[(x,y,z,w) for x in pred_dict.values() if x != "false"\
-    for y in pred_dict.values() if x != "false" for z in range(9) for w in range(9)]))
-    var_dict   = dict(zip(list(range(9)),[ (x,y) for x in var_names for y in var_names]))
+    #rules_dict = dict(zip(list(range(rules_dim)),[(x,y,z,w) for x in pred_dict.values() \
+    #        for y in pred_dict.values() for z in range(9) for w in range(9)]))
+    #var_dict   = dict(zip(list(range(9)),[ (x,y) for x in var_names for y in var_names]))
 
     print(f"{list(pred_dict.items())=}")
 
     # reverse version of the dictionaries
-    pred_dict_rev,atom_dict_rev,rules_dict_rev,var_dict_rev = revDict(pred_dict),revDict(atom_dict), \
-    revDict(rules_dict),revDict(var_dict)
+    pred_dict_rev,atom_dict_rev = revDict(pred_dict),revDict(atom_dict)
+    unary_preds : Set[int] = set(pred_dict_rev[u] for u in unary)
 
     base_val = torch.zeros([pred_dim, atom_dim, atom_dim], dtype=torch.float, device=dev)
-    body_predicates = torch.zeros([pred_dim, 2, rules_dim,2], dtype=torch.long, device=dev)
-    variable_choices = torch.zeros([pred_dim, 2, rules_dim,2], dtype=torch.long, device=dev)
+    body_predicates = []
+    variable_choices = []
     targets = torch.full([count_examples,target_arity+1], pred_dict_rev[target], dtype=torch.long, device=dev)
     target_values = torch.zeros([count_examples], dtype=torch.float, device=dev)
 
-    for x in range(pred_dim):
-        for y in range(atom_dim):
-            for z in range(atom_dim):
-                if Atom([atom_dict[y],atom_dict[z]],pred_dict[x]) in true_facts:
-                    logging.debug(f"{pred_dict[x]=} {atom_dict[y]=} {atom_dict[z]=}")
-                    base_val[x][y][z] = 1
+    for atom in true_facts:
+        pred_id = pred_dict_rev[atom[0]]
+        atom_ids = [atom_dict_rev[x] for x in atom[1]]
+        logging.debug(f"{atom[0]}({atom[1]}) -> {pred_id=} {atom_ids=}")
+        base_val[pred_id][atom_ids[0]][atom_ids[1]] = 1
 
-    for x in range(pred_dim):
-        for y in range(2):
-            for z in range(rules_dim):
-                for w in range(2):
-                    body_predicates[x][y][z][w] = pred_dict_rev["false"] if pred_dict[x] in \
-                    fact_names or pred_dict[x] == "false" else pred_dict_rev[rules_dict[z][w]]
-                    variable_choices[x][y][z][w] = int(rules_dict[z][2+w])
+    for head_pred in range(pred_dim):
+        ret_bp : List[Tuple[int,int]]= []
+        ret_vc : List[Tuple[int,int]] = []
+        head_name = pred_dict[head_pred]
+        if head_name not in pred_f:
+            for p1 in range(pred_dim):
+                for p2 in range(pred_dim):
+                    for v1, v2, v3, v4 in itertools.product(range(3),range(3),range(3),range(3)):
+                        if p1 == head_pred and v1 == 0 and v2 == 1:
+                            continue #self recursion
+                        if p2 == head_pred and v3 == 0 and v4 == 1:
+                            continue #self recursion
+                        if head_pred in unary_preds and 1 in {v1,v2,v3,v4}:
+                            continue #using second arg of unary target
+                        if p1 in unary_preds and v1 != v2:
+                            continue
+                        if p2 in unary_preds and v3 != v4:
+                            continue
+                        vc1 = v1 * 3 + v2
+                        vc2 = v3 * 3 + v4
+                        ret_bp.append((p1,p2))
+                        ret_vc.append((vc1,vc2))
+                        #logging.info(f"rule {pred_dict[pred]}(0,1) :- {pred_dict[p1]}({v1},{v2}), {pred_dict[p2]}({v3,v4})")
+
+        bp = torch.as_tensor(ret_bp, device=dev, dtype=torch.long).unsqueeze(0).repeat(2,1,1)
+        vc = torch.as_tensor(ret_vc, device=dev, dtype=torch.long).unsqueeze(0).repeat(2,1,1)
+        body_predicates.append(bp)
+        variable_choices.append(vc)
+        del bp, vc, ret_bp, ret_vc
 
     for x in range(len(target_facts)):
         for y in range(target_arity):
-            targets[x][y+1] = atom_dict_rev[target_facts[x].terms[y]]
-        if x < len(P):
-            target_values[x] = 1
+            targets[x][y+1] = atom_dict_rev[target_facts[x][1][y]]
+            target_values[x] = float(x < len(P))
 
     rulebook = dilp.Rulebook(body_predicates,variable_choices)
-    logging.debug(f"{rulebook.body_predicates.shape=},{rulebook.variable_choices.shape=}")
 
     #This should not be used. Instead one of the dictionaries should be used.
     #pred_names = list(pred_dict_rev.keys())
 
-    weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand(size=(pred_dim,2,rules_dim), device=dev)*10)
+    weights : List[torch.nn.Parameter] = [
+        torch.nn.Parameter(torch.rand(size=(2,bp.shape[1]), device=dev)*10)
+            for bp in rulebook.body_predicates]
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
-    print(f"done {rulebook.body_predicates.shape=} {rulebook.variable_choices.shape=}")
+    print(f"done")
     if optim == 'rmsprop':
-        opt : torch.optim.Optimizer = torch.optim.RMSprop([weights], lr=lr)
+        opt : torch.optim.Optimizer = torch.optim.RMSprop(weights, lr=lr)
     elif optim == 'adam':
-        opt = torch.optim.Adam([weights], lr=lr)
+        opt = torch.optim.Adam(weights, lr=lr)
     else:
         assert False
 
-    for epoch in tqdm(range(0, epochs)):
+    for epoch in tqdm(range(0, int(epochs))):
         opt.zero_grad()
+
         if dropout != 0:
-            moved = weights + torch.rand(weights.shape, device=weights.device) * dropout
+            moved : Sequence[torch.Tensor] = [w + torch.rand_like(w) * dropout for w in weights]
         else:
             moved = weights
         mse_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
         mse_loss = mse_loss.sum()
         mse_loss.backward()
 
-        n_loss = norm_loss(weights) * norm_weight
+        n_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
+                 * norm_weight / sum(w.numel() for w in weights)
         n_loss.backward()
-        # with torch.no_grad():
-        #     if weights.grad is not None:
-        #         print(f"{weights.grad[2]}")
-        #     #weights.grad = weights.grad / torch.max(weights.grad.norm(2, dim=-1, keepdim=True), torch.as_tensor(1e-8))
-        #     pass
+
         if clip is not None:
-            torch.nn.utils.clip_grad.clip_grad_norm_([weights], clip)
+            torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
+
         opt.step()
+
         print(f"mse loss: {mse_loss.item()} norm loss: {n_loss.item()}")
 
     dilp.print_program(rulebook, weights, pred_dict)
 
     _, report = dilp.loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
     print('weighted report:\n', report.detach().cpu().numpy())
-    crisp = torch.nn.functional.one_hot(weights.max(-1)[1], weights.shape[-1])
-    crisp = crisp.float().where(crisp == 1, torch.as_tensor(-float('inf'), device=crisp.device))
+    c0 = (torch.nn.functional.one_hot(w.max(-1)[1], w.shape[-1]) for w in weights)
+    crisp : Sequence[torch.Tensor] = [c.float().where(c == 1, torch.as_tensor(-float('inf'), device=c.device)) for c in c0]
     _, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=steps)
     print('crisp report:\n', crisp_report.detach().cpu().numpy())
 
@@ -189,7 +211,7 @@ def norm_loss(weights : torch.Tensor) -> torch.Tensor:
     logsoftmax = x.log_softmax(-1)
     softmax = logsoftmax.exp()
     x = (softmax * logsoftmax)
-    return -x.mean()
+    return -x.sum()
 
 if __name__ == "__main__":
     fire.Fire(main)

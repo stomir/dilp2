@@ -1,0 +1,13 @@
+empty(llempty,llempty).
+head(llabc,a).
+head(llbc,b).
+head(llc,c).
+head(lla,a).
+head(llab,a).
+head(llb,b).
+tail(llc,llempty).
+tail(llbc,llc).
+tail(llab,llb).
+tail(llabc,llbc).
+tail(lla,llempty).
+tail(llb,llempty).

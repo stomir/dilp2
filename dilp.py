@@ -3,13 +3,13 @@ import logging
 from typing import *
 
 class Rulebook(NamedTuple):
-    body_predicates : torch.Tensor
-    variable_choices : torch.Tensor
+    body_predicates : Sequence[torch.Tensor]
+    variable_choices : Sequence[torch.Tensor]
 
     def to(self, device : torch.device) -> 'Rulebook':
         return Rulebook(
-            body_predicates = self.body_predicates.to(device),
-            variable_choices = self.variable_choices.to(device))
+            body_predicates = list(t.to(device) for t in self.body_predicates),
+            variable_choices = list(t.to(device) for t in self.variable_choices))
 #'''
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return 1 - (1 - a) * (1 - b)
@@ -68,9 +68,9 @@ def var_choices(n : int, vars : int = 3) -> List[int]:
 
 def rule_str(rule : int, clause : int, predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
     ret = []
-    for i in range(0, rulebook.body_predicates.shape[3]):
-        vs = ','.join(map(lambda v: chr(ord('A')+v),  var_choices(int(rulebook.variable_choices[predicate,clause,rule,i]))))
-        ret.append(f'{pred_names[int(rulebook.body_predicates[predicate,clause,rule,i].item())]}({vs})')
+    for i in range(0, rulebook.body_predicates[predicate].shape[2]):
+        vs = ','.join(map(lambda v: chr(ord('A')+v),  var_choices(int(rulebook.variable_choices[predicate][clause,rule,i]))))
+        ret.append(f'{pred_names[int(rulebook.body_predicates[predicate][clause,rule,i].item())]}({vs})')
     return ','.join(ret)
 
 def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
@@ -93,31 +93,33 @@ def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
                 unused = (x for x in range(0, vars) if x not in {arg1, arg2})
                 for u in unused:
                     v = v.unsqueeze(u + 1)
-            logging.debug(f"{i=} {arg1=} {arg2=} {v.shape=} {val.shape=}")
             v = torch.broadcast_to(v, shape) #type: ignore
             v = v.unsqueeze(1)
             ret.append(v)
             i += 1
     return torch.cat(ret, dim=1)
 
-def infer_single_step_optimized(val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, vars : int = 3,
+def infer_single_step_optimized(val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor], vars : int = 3,
     ignored : Set[int] = set()) -> torch.Tensor:
     ex_val = extend_val(val, vars = vars)
     ret = []
     for pred in range(0, len(val)):
-        if pred in ignored or len(rulebook.body_predicates[pred]) == 0:
-            ret.append(torch.zeros(val.shape[1:]).unsqueeze(0))
+        if pred in ignored or rulebook.body_predicates[pred].numel() == 0:
+            ret.append(torch.zeros((val.shape[1:]), device=val.device).unsqueeze(0))
             continue
-        small_rulebook = Rulebook(body_predicates=rulebook.body_predicates[pred], variable_choices=rulebook.variable_choices[pred])
-        val2 = infer_single_step(ex_val = ex_val, rules = small_rulebook, rule_weights = weights[pred])
+        val2 = infer_single_step(ex_val = ex_val,
+            body_predicates=rulebook.body_predicates[pred],
+            variable_choices=rulebook.variable_choices[pred],
+            rule_weights = weights[pred])
         ret.append(val2.unsqueeze(0))
-    logging.debug(f"{[x.shape for x in ret]=} {val.shape=}")
-    return disjunction2(val, torch.cat(ret, dim=0))
+    return torch.cat(ret, dim=0)
     
 
-def infer_single_step(ex_val : torch.Tensor, rules : Rulebook, rule_weights : torch.Tensor) -> torch.Tensor:
-    logging.debug(f"{ex_val.shape=} {rules.body_predicates.shape=} {rules.variable_choices.shape=}")
-    ex_val = ex_val[rules.body_predicates, rules.variable_choices]
+def infer_single_step(ex_val : torch.Tensor, 
+        body_predicates : torch.Tensor, variable_choices : torch.Tensor,
+        rule_weights : torch.Tensor) -> torch.Tensor:
+    logging.debug(f"{ex_val.shape=} {body_predicates.shape=} {variable_choices.shape=}")
+    ex_val = ex_val[body_predicates, variable_choices]
     logging.debug(f"{ex_val.shape=}")
     #conjuction of body predictes
     ex_val = conjunction_dim(ex_val, dim = -4)
@@ -132,7 +134,7 @@ def infer_single_step(ex_val : torch.Tensor, rules : Rulebook, rule_weights : to
     logging.debug(f"returning {ex_val.shape=}")
     return ex_val
 
-def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, vars : int = 3) -> torch.Tensor:
+def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor], vars : int = 3) -> torch.Tensor:
     val = base_val
     for i in range(0, steps):
         #val2 = extend_val(val, vars)
@@ -141,7 +143,7 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
         val = disjunction2(val, val2)
     return val
         
-def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
+def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor],
         targets : torch.Tensor,
         target_values : torch.Tensor,
         steps : int = 2, vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -149,12 +151,15 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
     return (preds - target_values).square(), torch.cat((target_values.unsqueeze(1), preds.unsqueeze(1)), dim=1)
     
-def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 3):
-    weights = weights.detach().softmax(-1).cpu()
-    for pred in range(0, rulebook.body_predicates.shape[0]):
+def print_program(rulebook : Rulebook, weights : Sequence[torch.Tensor], pred_names : Dict[int,str], elements : int = 3):
+    for pred, rules in enumerate(rulebook.body_predicates):
+        if rules.numel() == 0:
+            continue
         pred_name = pred_names[pred]
-        for clause in range(0, rulebook.body_predicates.shape[1]):
-            values, idxs = weights[pred][clause].sort(descending=True)
+        wei = weights[pred].detach().softmax(-1).cpu()
+        for clause in range(0, rules.shape[0]):
+            values, idxs = wei[clause].sort(descending=True)
+            print(f"{values.shape=} {idxs.shape=} {pred_name=} {rules.shape=} {clause=}")
             ret = []
             for elem in range(0, elements):
                 ret.append(f"[{rule_str(int(idxs[elem]), clause, pred, rulebook, pred_names)} x{values[elem].item():.5f}]")

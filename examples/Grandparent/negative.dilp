@@ -1,1 +1,6 @@
 grandparent(amy,amelia).
+grandparent(amy,amy).
+grandparent(steve,steve).
+grandparent(spongebob,amelia).
+grandparent(ann,amy).
+grandparent(linda,spongebob).

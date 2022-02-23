@@ -1,0 +1,12 @@
+front(llbc,llc).
+front(llc,llb).
+front(llabc,llabc).
+front(lla,llbc).
+front(llc,llab).
+front(llempty,llab).
+front(llb,lla).
+front(llempty,llempty).
+front(llc,llc).
+front(llab,llempty).
+front(llempty,lla).
+front(llb,llb).
