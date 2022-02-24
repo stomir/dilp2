@@ -1,5 +1,5 @@
 import sys
-import fire
+import fire #type: ignore
 import os
 head = "head("
 tail = "tail("
