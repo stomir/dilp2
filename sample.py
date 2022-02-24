@@ -56,9 +56,11 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
         unary : Set[str] = set(), init_rand : float = 10,
-        layers : Optional[List[int]] = None,
-        recursion : bool = False,
+        layers : Optional[List[int]] = None, info : bool = False,
+        recursion : bool = True,
         seed : Optional[int] = 0, dropout : float = 0):
+    if info:
+        logging.getLogger().setLevel(logging.INFO)
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -127,7 +129,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     for atom in true_facts:
         pred_id = pred_dict_rev[atom[0]]
         atom_ids = [atom_dict_rev[x] for x in atom[1]]
-        logging.debug(f"{atom[0]}({atom[1]}) -> {pred_id=} {atom_ids=}")
+        logging.info(f"{atom[0]}({atom[1]}) -> {pred_id=} {atom_ids=}")
         base_val[pred_id][atom_ids[0]][atom_ids[1]] = 1
 
     for head_pred in range(pred_dim):
@@ -138,27 +140,20 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             for p1 in range(pred_dim):
                 for p2 in range(pred_dim):
                     for v1, v2, v3, v4 in itertools.product(range(3),range(3),range(3),range(3)):
-                        if p1 == head_pred and v1 == 0 and v2 == 1: continue #self recursion
-                        if p2 == head_pred and v3 == 0 and v4 == 1: continue #self recursion
+                        if any(p == head_pred and a == 0 and b == 1 for (p,a,b) in {(p1,v1,v2),(p2,v3,v4)} ): continue #self recursion
                         
                         if head_pred in unary_preds and 1 in {v1,v2,v3,v4}: continue #using second arg of unary target
                         
                         if p1 in unary_preds: v1 = v2
                         if p2 in unary_preds: v3 = v4
                         
-                        if any(head_pred in invented_preds and p in invented_preds and p < head_pred for p in {p1,p2}): continue
+                        #if any(head_pred in invented_preds and p in invented_preds and p < head_pred for p in {p1,p2}): continue
 
                         if not recursion and head_pred in {p1, p2}: continue
 
-                        #if head_pred == 4 and p1 == 6:
-                            #for p in {p1,p2}:
-                                #print(f"{layers is not None=} {head_pred in invented_preds=} {p != head_pred=} {p in invented_preds=} {layer_dict[head_pred]+1 != layer_dict[p]=}")
                         if any(layers is not None and head_pred in invented_preds and p != head_pred and p in invented_preds and layer_dict[head_pred]+1 != layer_dict[p] for p in {p1, p2}): continue
 
                         if any(layers is not None and head_pred == 0 and p in invented_preds and layer_dict[p] != 0 for p in {p1,p2}): continue #main pred only calls first layer
-
-                        #if head_pred in invented_preds and p1 != head_pred and p1 in invented_preds: continue #flat inveted only
-                        #if head_pred in invented_preds and p2 != head_pred and p2 in invented_preds: continue
 
                         vc1 = v1 * 3 + v2
                         vc2 = v3 * 3 + v4
@@ -170,6 +165,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         vc = torch.as_tensor(ret_vc, device=dev, dtype=torch.long).unsqueeze(0).repeat(2,1,1)
         body_predicates.append(bp)
         variable_choices.append(vc)
+        logging.info(f"predicate {head_name} ({head_pred}) rules {bp.shape} {vc.shape}")
         del bp, vc, ret_bp, ret_vc
 
     for x in range(len(target_facts)):
@@ -203,7 +199,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         else:
             moved = weights
         mse_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
-        mse_loss = mse_loss.sum()
+        mse_loss = mse_loss.mean()
         mse_loss.backward()
 
         n_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
