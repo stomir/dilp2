@@ -1,0 +1,4 @@
+last(llabcd,c).
+last(llhgdb,g).
+last(llefgh,f).
+last(llfcde,f).
