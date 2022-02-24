@@ -1,0 +1,8 @@
+member(llabcd,a).
+member(llfcde,d).
+member(llhgdb,g).
+member(llhgdb,b).
+member(llefgh,h).
+member(llabcd,d).
+member(llfcde,f).
+member(llefgh,e).
