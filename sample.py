@@ -146,13 +146,14 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                         if p1 in unary_preds: v1 = v2
                         if p2 in unary_preds: v3 = v4
                         
-                        if head_pred in invented_preds and p1 in invented_preds and p1 > head_pred: continue
-                        if head_pred in invented_preds and p2 in invented_preds and p2 > head_pred: continue
+                        if any(head_pred in invented_preds and p in invented_preds and p < head_pred for p in {p1,p2}): continue
 
                         if not recursion and head_pred in {p1, p2}: continue
 
-                        if layers is not None and head_pred in invented_preds and p1 != head_pred and p1 in invented_preds and layer_dict[head_pred]+1 != layer_dict[p1]: continue
-                        if layers is not None and head_pred in invented_preds and p2 != head_pred and p2 in invented_preds and layer_dict[head_pred]+1 != layer_dict[p2]: continue
+                        #if head_pred == 4 and p1 == 6:
+                            #for p in {p1,p2}:
+                                #print(f"{layers is not None=} {head_pred in invented_preds=} {p != head_pred=} {p in invented_preds=} {layer_dict[head_pred]+1 != layer_dict[p]=}")
+                        if any(layers is not None and head_pred in invented_preds and p != head_pred and p in invented_preds and layer_dict[head_pred]+1 != layer_dict[p] for p in {p1, p2}): continue
 
                         if any(layers is not None and head_pred == 0 and p in invented_preds and layer_dict[p] != 0 for p in {p1,p2}): continue #main pred only calls first layer
 
@@ -163,7 +164,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                         vc2 = v3 * 3 + v4
                         ret_bp.append((p1,p2))
                         ret_vc.append((vc1,vc2))
-                        #logging.info(f"rule {pred_dict[pred]}(0,1) :- {pred_dict[p1]}({v1},{v2}), {pred_dict[p2]}({v3,v4})")
+                        #logging.info(f"rule {pred_dict[head_pred]}(0,1) :- {pred_dict[p1]}({v1},{v2}), {pred_dict[p2]}({v3,v4})")
 
         bp = torch.as_tensor(ret_bp, device=dev, dtype=torch.long).unsqueeze(0).repeat(2,1,1)
         vc = torch.as_tensor(ret_vc, device=dev, dtype=torch.long).unsqueeze(0).repeat(2,1,1)
