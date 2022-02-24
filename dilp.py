@@ -1,6 +1,7 @@
 import torch
 import logging
 from typing import *
+import weird
 
 class Rulebook(NamedTuple):
     body_predicates : Sequence[torch.Tensor]
@@ -44,7 +45,7 @@ conjunction_dim = conjunction_dim_max
 
 def set_norm(norm_name : str):
     global disjunction2, disjunction_dim, conjunction2, conjunction_dim
-    assert norm_name in {'max', 'prod', 'mixed'}
+    assert norm_name in {'max', 'prod', 'mixed', 'weird'}
     if norm_name == 'max':
         disjunction2 = disjunction2_max
         disjunction_dim = disjunction_dim_max
@@ -60,6 +61,11 @@ def set_norm(norm_name : str):
         disjunction_dim = disjunction_dim_max
         conjunction2 = conjunction2_prod
         conjunction_dim = conjunction_dim_prod
+    elif norm_name == 'weird':
+        disjunction2 = weird.WeirdMax.apply #type: ignore
+        conjunction2 = weird.WeirdMin.apply #type: ignore
+        disjunction_dim = weird.WeirdMaxDim.apply #type: ignore
+        conjunction_dim = weird.WeirdMinDim.apply #type: ignore
     else:
         assert False
 
@@ -122,15 +128,15 @@ def infer_single_step(ex_val : torch.Tensor,
     ex_val = ex_val[body_predicates, variable_choices]
     logging.debug(f"{ex_val.shape=}")
     #conjuction of body predictes
-    ex_val = conjunction_dim(ex_val, dim = -4)
+    ex_val = conjunction_dim(ex_val, -4)
     #existential quantification
-    ex_val = disjunction_dim(ex_val, dim = -1)
+    ex_val = disjunction_dim(ex_val, -1)
     #rule weighing
     rule_weights = rule_weights.softmax(-1).unsqueeze(-1).unsqueeze(-1)
     ex_val = ex_val * rule_weights
     ex_val = ex_val.sum(dim = -3)
     #disjunction on clauses
-    ex_val = disjunction_dim(ex_val, dim = -3)
+    ex_val = disjunction_dim(ex_val, -3)
     logging.debug(f"returning {ex_val.shape=}")
     return ex_val
 
@@ -159,7 +165,6 @@ def print_program(rulebook : Rulebook, weights : Sequence[torch.Tensor], pred_na
         wei = weights[pred].detach().softmax(-1).cpu()
         for clause in range(0, rules.shape[0]):
             values, idxs = wei[clause].sort(descending=True)
-            print(f"{values.shape=} {idxs.shape=} {pred_name=} {rules.shape=} {clause=}")
             ret = []
             for elem in range(0, elements):
                 ret.append(f"[{rule_str(int(idxs[elem]), clause, pred, rulebook, pred_names)} x{values[elem].item():.5f}]")

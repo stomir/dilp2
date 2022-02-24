@@ -55,7 +55,9 @@ def process_file(filename) -> Tuple[List[Tuple[str,List[str]]],Set[str],Set[str]
 def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 10,
         debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
-        unary : Set[str] = set(),
+        unary : Set[str] = set(), init_rand : float = 10,
+        layers : Optional[List[int]] = None,
+        recursion : bool = False,
         seed : Optional[int] = 0, dropout : float = 0):
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -107,12 +109,20 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     # reverse version of the dictionaries
     pred_dict_rev,atom_dict_rev = revDict(pred_dict),revDict(atom_dict)
     unary_preds : Set[int] = set(pred_dict_rev[u] for u in unary)
+    invented_preds = set(pred_dict_rev[f"inv_{i}"] for i in range(0, inv))
+
+    if layers is None:
+        layer_dict : Dict[int, int] = dict()
+    else:
+        layer_dict = dict(zip(invented_preds, sum(([i for _ in range(layer)] for i, layer in enumerate(layers)), start=[])))
 
     base_val = torch.zeros([pred_dim, atom_dim, atom_dim], dtype=torch.float, device=dev)
     body_predicates = []
     variable_choices = []
     targets = torch.full([count_examples,target_arity+1], pred_dict_rev[target], dtype=torch.long, device=dev)
     target_values = torch.zeros([count_examples], dtype=torch.float, device=dev)
+
+    print(f"{invented_preds=} {layer_dict=}")
 
     for atom in true_facts:
         pred_id = pred_dict_rev[atom[0]]
@@ -128,16 +138,27 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             for p1 in range(pred_dim):
                 for p2 in range(pred_dim):
                     for v1, v2, v3, v4 in itertools.product(range(3),range(3),range(3),range(3)):
-                        if p1 == head_pred and v1 == 0 and v2 == 1:
-                            continue #self recursion
-                        if p2 == head_pred and v3 == 0 and v4 == 1:
-                            continue #self recursion
-                        if head_pred in unary_preds and 1 in {v1,v2,v3,v4}:
-                            continue #using second arg of unary target
-                        if p1 in unary_preds and v1 != v2:
-                            continue
-                        if p2 in unary_preds and v3 != v4:
-                            continue
+                        if p1 == head_pred and v1 == 0 and v2 == 1: continue #self recursion
+                        if p2 == head_pred and v3 == 0 and v4 == 1: continue #self recursion
+                        
+                        if head_pred in unary_preds and 1 in {v1,v2,v3,v4}: continue #using second arg of unary target
+                        
+                        if p1 in unary_preds: v1 = v2
+                        if p2 in unary_preds: v3 = v4
+                        
+                        if head_pred in invented_preds and p1 in invented_preds and p1 > head_pred: continue
+                        if head_pred in invented_preds and p2 in invented_preds and p2 > head_pred: continue
+
+                        if not recursion and head_pred in {p1, p2}: continue
+
+                        if layers is not None and head_pred in invented_preds and p1 != head_pred and p1 in invented_preds and layer_dict[head_pred]+1 != layer_dict[p1]: continue
+                        if layers is not None and head_pred in invented_preds and p2 != head_pred and p2 in invented_preds and layer_dict[head_pred]+1 != layer_dict[p2]: continue
+
+                        if any(layers is not None and head_pred == 0 and p in invented_preds and layer_dict[p] != 0 for p in {p1,p2}): continue #main pred only calls first layer
+
+                        #if head_pred in invented_preds and p1 != head_pred and p1 in invented_preds: continue #flat inveted only
+                        #if head_pred in invented_preds and p2 != head_pred and p2 in invented_preds: continue
+
                         vc1 = v1 * 3 + v2
                         vc2 = v3 * 3 + v4
                         ret_bp.append((p1,p2))
@@ -161,7 +182,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     #pred_names = list(pred_dict_rev.keys())
 
     weights : List[torch.nn.Parameter] = [
-        torch.nn.Parameter(torch.rand(size=(2,bp.shape[1]), device=dev)*10)
+        torch.nn.Parameter(torch.rand(size=bp.shape[:-1], device=dev)*init_rand)
             for bp in rulebook.body_predicates]
 
     #opt = torch.optim.SGD([weights], lr=1e-2)

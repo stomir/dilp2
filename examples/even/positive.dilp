@@ -1,6 +1,6 @@
 target(0,0).
-target(2,0).
-target(4,0).
-target(6,0).
-target(8,0).
-target(10,0).
+target(2,2).
+target(4,4).
+target(6,6).
+target(8,8).
+target(10,10).
