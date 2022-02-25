@@ -7,6 +7,7 @@ import torch
 import logging
 #from core import Term, Atom
 from typing import *
+import GPUtil #type: ignore
 import itertools
 
 # relationship will refer to 'track' in all of your examples
@@ -57,7 +58,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
         unary : Set[str] = set(), init_rand : float = 10,
         layers : Optional[List[int]] = None, info : bool = False,
-        recursion : bool = True,
+        recursion : bool = True, normalize_threshold : Optional[float] = None,
+        invented_recursion : bool = False, batch_chance : float = 1.0,
         seed : Optional[int] = None, dropout : float = 0):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -150,6 +152,10 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
                         if not recursion and head_pred == p: continue
 
+                        if not invented_recursion and head_pred in invented_preds and p in {head_pred, 0}: continue
+
+                        if head_pred != 0 and p == 0: continue
+
                         if layers is not None and head_pred in invented_preds and p != head_pred and p in invented_preds and layer_dict[head_pred]+1 != layer_dict[p]: continue
 
                         if layers is not None and head_pred == 0 and p in invented_preds and layer_dict[p] != 0: continue #main pred only calls first layer
@@ -201,13 +207,21 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                 for w in weights]
         else:
             moved = [w.softmax(-1) for w in weights]
-        mse_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
-        mse_loss = mse_loss.mean()
-        mse_loss.backward()
+        target_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
+        report_loss = target_loss.mean()
+        if batch_chance < 1.0:
+            chosen = torch.rand_like(target_loss) < batch_chance
+            target_loss = target_loss.where(chosen, torch.as_tensor(0.0, device=dev)).sum() / chosen.sum()
+        else:
+            target_loss = target_loss.mean()
+        target_loss.backward()
 
-        entropy_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
+        if normalize_threshold is None or target_loss.item() < normalize_threshold:
+            entropy_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
                  * norm_weight / sum(w.numel() for w in weights)
-        entropy_loss.backward()
+            entropy_loss.backward()
+        else:
+            entropy_loss = torch.as_tensor(0.0)
 
         if clip is not None:
             torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
@@ -215,22 +229,22 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.step()
         #adjust_weights(weights)
 
-        tq.set_postfix(mse_loss = mse_loss.item(), entropy_loss = entropy_loss.item())
+        if epoch % 100 == 0:
+            gpu_util = [gpu.load for gpu in GPUtil.getGPUs()]
 
-        logging.info(f"mse loss: {mse_loss.item()} entropy loss: {entropy_loss.item()}")
+        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), gpu_util = gpu_util)
+
+        logging.info(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
 
     dilp.print_program(rulebook, weights, pred_dict)
 
-    _, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = [w.softmax(-1) for w in weights], targets=targets, target_values=target_values, steps=steps)
+    final_loss, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = [w.softmax(-1) for w in weights], targets=targets, target_values=target_values, steps=steps)
     crisp = [(w if w.numel() == 0 else 
         torch.nn.functional.one_hot(w.max(-1)[1], w.shape[-1]).float()) for w in weights]
     #crisp : Sequence[torch.Tensor] = [c.float().where(c == 1, torch.as_tensor(-float('inf'), device=c.device)) for c in c0]
-    for c, w in zip(crisp, weights):
-        assert w.shape == c.shape
-        logging.info(f"{c=} {w.softmax(-1)=}")
-    _, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=steps)
+    crisp_loss, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=steps)
     report = torch.cat([target_values.unsqueeze(1), fuzzy_report.unsqueeze(1), crisp_report.unsqueeze(1)], dim=1).detach().cpu().numpy()
-    print('report:\n', report)
+    print(f'final_loss: {final_loss.mean().item():.5f} crisp_loss: {crisp_loss.mean().item():.5f}:\n', report)
 
 def adjust_weights(weights : List[torch.nn.Parameter]):
     with torch.no_grad():

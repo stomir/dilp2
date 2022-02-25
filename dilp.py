@@ -159,8 +159,8 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.
         steps : int = 2, vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
     val = infer_steps(steps, base_val, rulebook, weights, vars)
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
-    return (preds - target_values).square(), preds
-    #return (- (preds.log() * target_values + (1-preds).log() * (1-target_values))), preds
+    #return (preds - target_values).square(), preds
+    return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
     
 def print_program(rulebook : Rulebook, weights : Sequence[torch.Tensor], pred_names : Dict[int,str], elements : int = 2):
     for pred, rules in enumerate(rulebook.body_predicates):
