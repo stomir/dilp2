@@ -68,7 +68,7 @@ def process_file(filename) -> Tuple[List[Tuple[str,List[str]]],Set[str],Set[str]
             constants.update((term for term in result['arguments'][idx]))
     return atoms, predicates, constants
 
-def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 10,
+def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 0,
         debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
         unary : Set[str] = set(), init_rand : float = 10,
@@ -104,6 +104,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         raise Exception('Can learn only one predicate at a time')
     elif not constants_n.issubset(constants_f) or not constants_p.issubset(constants_f):
         raise Exception('Constants not in fact file exists in positive/negative file')
+        #pass
 
     invented_names= ["inv_"+str(x) for x in range(inv)]
     target = next(iter(target_p))
@@ -222,8 +223,11 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     #pred_names = list(pred_dict_rev.keys())
 
     weights : List[torch.nn.Parameter] = [
+        #torch.nn.Parameter(torch.normal(torch.zeros(size=bp.shape[:-1], device=dev), init_rand))
         torch.nn.Parameter(torch.rand(size=bp.shape[:-1], device=dev)*init_rand)
             for bp in rulebook.body_predicates]
+    #adjust_weights(weights)
+    logging.info(f"{weights[0].shape=}")
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
     if optim == 'rmsprop':
@@ -233,36 +237,48 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     else:
         assert False
 
-    for epoch in tqdm(range(0, int(epochs))):
+    for epoch in (tq := tqdm(range(0, int(epochs)))):
         opt.zero_grad()
 
         if dropout != 0:
-            moved : Sequence[torch.Tensor] = [w + torch.rand_like(w) * dropout for w in weights]
+            moved : Sequence[torch.Tensor] = [w.softmax(-1) * (1-dropout) +
+                torch.distributions.Dirichlet(torch.ones_like(w)).sample() * dropout
+                for w in weights]
         else:
-            moved = weights
+            moved = [w.softmax(-1) for w in weights]
         mse_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
         mse_loss = mse_loss.mean()
         mse_loss.backward()
 
-        n_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
+        entropy_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
                  * norm_weight / sum(w.numel() for w in weights)
-        n_loss.backward()
+        entropy_loss.backward()
 
         if clip is not None:
             torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
 
         opt.step()
+        #adjust_weights(weights)
 
-        print(f"mse loss: {mse_loss.item()} norm loss: {n_loss.item()}")
+        tq.set_postfix(mse_loss = mse_loss.item(), entropy_loss = entropy_loss.item())
+
+        logging.info(f"mse loss: {mse_loss.item()} entropy loss: {entropy_loss.item()}")
 
     dilp.print_program(rulebook, weights, pred_dict)
 
-    _, report = dilp.loss(base_val, rulebook=rulebook, weights = weights, targets=targets, target_values=target_values, steps=steps)
-    print('weighted report:\n', report.detach().cpu().numpy())
-    c0 = (torch.nn.functional.one_hot(w.max(-1)[1], w.shape[-1]) for w in weights)
-    crisp : Sequence[torch.Tensor] = [c.float().where(c == 1, torch.as_tensor(-float('inf'), device=c.device)) for c in c0]
+    _, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = [w.softmax(-1) for w in weights], targets=targets, target_values=target_values, steps=steps)
+    crisp = [torch.nn.functional.one_hot(w.max(-1)[1], w.shape[-1]) for w in weights]
+    #crisp : Sequence[torch.Tensor] = [c.float().where(c == 1, torch.as_tensor(-float('inf'), device=c.device)) for c in c0]
     _, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=steps)
-    print('crisp report:\n', crisp_report.detach().cpu().numpy())
+    report = torch.cat([target_values.unsqueeze(1), fuzzy_report.unsqueeze(1), crisp_report.unsqueeze(1)], dim=1).detach().cpu().numpy()
+    print('report:\n', report)
+
+def adjust_weights(weights : List[torch.nn.Parameter]):
+    with torch.no_grad():
+            for w in weights:
+                a = torch.max(torch.zeros(size=(), device=w.device), w)
+                w[:] = a / a.sum(dim=1, keepdim=True)
+                #assert (w.sum(-1) == 1).all(), f"{w.sum(-1)=}"
 
 def norm_loss(weights : torch.Tensor) -> torch.Tensor:
     #x = weights.softmax(-1)
@@ -271,6 +287,7 @@ def norm_loss(weights : torch.Tensor) -> torch.Tensor:
     logsoftmax = x.log_softmax(-1)
     softmax = logsoftmax.exp()
     x = (softmax * logsoftmax)
+    #x = (x * x.log())
     return -x.sum()
 
 if __name__ == "__main__":

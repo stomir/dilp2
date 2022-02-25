@@ -18,7 +18,6 @@ head(llcd,c).
 tail(llgh,llh).
 head(lld,d).
 tail(llefgh,llfgh).
-empty(llempty,llempty).
 head(llgdb,g).
 tail(llfgh,llgh).
 tail(lldb,llb).
