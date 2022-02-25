@@ -133,36 +133,34 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         base_val[pred_id][atom_ids[0]][atom_ids[1]] = 1
 
     for head_pred in range(pred_dim):
-        ret_bp : List[Tuple[int,int]]= []
-        ret_vc : List[Tuple[int,int]] = []
+        ret_bp : List[int]= []
+        ret_vc : List[int] = []
         head_name = pred_dict[head_pred]
         if head_name not in pred_f:
-            for p1 in range(pred_dim):
-                for p2 in range(pred_dim):
-                    for v1, v2, v3, v4 in itertools.product(range(3),range(3),range(3),range(3)):
-                        if any(p == head_pred and a == 0 and b == 1 for (p,a,b) in {(p1,v1,v2),(p2,v3,v4)} ): continue #self recursion
+            for p in range(pred_dim):
+                #for p2 in range(pred_dim):
+                    for a, b in itertools.product(range(3),range(3)):
+                        if p == head_pred and a == 0 and b == 1: continue #self recursion
                         
-                        if head_pred in unary_preds and 1 in {v1,v2,v3,v4}: continue #using second arg of unary target
+                        if head_pred in unary_preds and 1 in {a,b}: continue #using second arg of unary target
                         
-                        if p1 in unary_preds: v1 = v2
-                        if p2 in unary_preds: v3 = v4
+                        if p in unary_preds: a == b
                         
                         #if any(head_pred in invented_preds and p in invented_preds and p < head_pred for p in {p1,p2}): continue
 
-                        if not recursion and head_pred in {p1, p2}: continue
+                        if not recursion and head_pred == p: continue
 
-                        if any(layers is not None and head_pred in invented_preds and p != head_pred and p in invented_preds and layer_dict[head_pred]+1 != layer_dict[p] for p in {p1, p2}): continue
+                        if layers is not None and head_pred in invented_preds and p != head_pred and p in invented_preds and layer_dict[head_pred]+1 != layer_dict[p]: continue
 
-                        if any(layers is not None and head_pred == 0 and p in invented_preds and layer_dict[p] != 0 for p in {p1,p2}): continue #main pred only calls first layer
+                        if layers is not None and head_pred == 0 and p in invented_preds and layer_dict[p] != 0: continue #main pred only calls first layer
 
-                        vc1 = v1 * 3 + v2
-                        vc2 = v3 * 3 + v4
-                        ret_bp.append((p1,p2))
-                        ret_vc.append((vc1,vc2))
+                        vc1 = a * 3 + b
+                        ret_bp.append(p)
+                        ret_vc.append(vc1)
                         #logging.info(f"rule {pred_dict[head_pred]}(0,1) :- {pred_dict[p1]}({v1},{v2}), {pred_dict[p2]}({v3,v4})")
 
-        bp = torch.as_tensor(ret_bp, device=dev, dtype=torch.long).unsqueeze(0).repeat(2,1,1)
-        vc = torch.as_tensor(ret_vc, device=dev, dtype=torch.long).unsqueeze(0).repeat(2,1,1)
+        bp = torch.as_tensor(ret_bp, device=dev, dtype=torch.long)
+        vc = torch.as_tensor(ret_vc, device=dev, dtype=torch.long)
         body_predicates.append(bp)
         variable_choices.append(vc)
         logging.info(f"predicate {head_name} ({head_pred}) rules {bp.shape} {vc.shape}")
@@ -180,7 +178,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
     weights : List[torch.nn.Parameter] = [
         #torch.nn.Parameter(torch.normal(torch.zeros(size=bp.shape[:-1], device=dev), init_rand))
-        torch.nn.Parameter(torch.rand(size=bp.shape[:-1], device=dev)*init_rand)
+        torch.nn.Parameter(torch.rand(size=(2, 2, len(bp)), device=dev)*init_rand)
             for bp in rulebook.body_predicates]
     #adjust_weights(weights)
     logging.info(f"{weights[0].shape=}")

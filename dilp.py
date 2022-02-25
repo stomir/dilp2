@@ -128,15 +128,14 @@ def infer_single_step(ex_val : torch.Tensor,
     logging.debug(f"{ex_val.shape=} {body_predicates.shape=} {variable_choices.shape=}")
     ex_val = ex_val[body_predicates, variable_choices]
     logging.debug(f"{ex_val.shape=}")
+    #rule weighing
+    rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+    ex_val = ex_val * rule_weights
+    ex_val = ex_val.sum(dim = -4)
     #conjuction of body predictes
     ex_val = conjunction_dim(ex_val, -4)
     #existential quantification
     ex_val = disjunction_dim(ex_val, -1)
-    #rule weighing
-    #rule_weights = rule_weights.softmax(-1)
-    rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1)
-    ex_val = ex_val * rule_weights
-    ex_val = ex_val.sum(dim = -3)
     #disjunction on clauses
     ex_val = disjunction_dim(ex_val, -3)
     logging.debug(f"returning {ex_val.shape=}")
