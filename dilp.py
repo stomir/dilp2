@@ -97,22 +97,7 @@ def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
             ret.append(v)
             i += 1
     return torch.cat(ret, dim=1)
-
-def infer_single_step_optimized(val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor], vars : int = 3,
-    ignored : Set[int] = set()) -> torch.Tensor:
-    ex_val = extend_val(val, vars = vars)
-    ret = []
-    for pred in range(0, len(val)):
-        if pred in ignored or rulebook.body_predicates[pred].numel() == 0:
-            ret.append(torch.zeros((val.shape[1:]), device=val.device).unsqueeze(0))
-            continue
-        val2 = infer_single_step(ex_val = ex_val,
-            body_predicates=rulebook.body_predicates[pred],
-            variable_choices=rulebook.variable_choices[pred],
-            rule_weights = weights[pred])
-        ret.append(val2.unsqueeze(0))
-    return torch.cat(ret, dim=0)
-    
+   
 
 def infer_single_step(ex_val : torch.Tensor, 
         body_predicates : torch.Tensor, variable_choices : torch.Tensor,
@@ -135,20 +120,20 @@ def infer_single_step(ex_val : torch.Tensor,
     logging.debug(f"returning {ex_val.shape=}")
     return ex_val
 
-def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor], vars : int = 3) -> torch.Tensor:
+def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, vars : int = 3) -> torch.Tensor:
     val = base_val
     vals : List[torch.Tensor] = []
     for i in range(0, steps):
         val2 = extend_val(val, vars)
         val2 = infer_single_step(ex_val = val2, body_predicates=rulebook.body_predicates, variable_choices=rulebook.variable_choices, \
-            rule_weights = weights[0])
+            rule_weights = weights)
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         vals.append(val2.unsqueeze(0))
         val = disjunction2(val, val2)
     return disjunction_dim(torch.cat(vals), 0)
     return val
         
-def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor],
+def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
         targets : torch.Tensor,
         target_values : torch.Tensor,
         steps : int = 2, vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -157,7 +142,7 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.
     #return (preds - target_values).square(), preds
     return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
     
-def print_program(rulebook : Rulebook, weights : Sequence[torch.Tensor], pred_names : Dict[int,str], elements : int = 2):
+def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 2):
     for pred, rules in enumerate(rulebook.body_predicates):
         if rules.numel() == 0:
             continue

@@ -72,6 +72,9 @@ def merge_mask(ts : List[torch.Tensor], dim : int = 0, newdim : int = 0) -> torc
         torch.as_tensor(-float('inf'), device=t.device).repeat(required_shape(t))), dim=dim).unsqueeze(newdim) for t in ts)
     return torch.cat(list(ts), dim=newdim)
 
+def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
+    return t.where(rulebook.mask.unsqueeze(1).unsqueeze(1), torch.zeros(size=(),device=t.device))
+
 def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 0,
         debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
@@ -202,22 +205,21 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     #pred_names = list(pred_dict_rev.keys())
 
     shape = rulebook.body_predicates.shape
-    weights : List[torch.nn.Parameter] = \
-        [torch.nn.Parameter(torch.rand([shape[0],2,2,shape[1]], device=dev) * init_rand)]
+    weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand([shape[0],2,2,shape[1]], device=dev) * init_rand)
         #torch.nn.Parameter(torch.normal(torch.zeros(size=bp.shape[:-1], device=dev), init_rand))
         #torch.nn.Parameter(torch.rand(size=(2, 2, len(bp)), device=dev)*init_rand)
         #    for bp in rulebook.body_predicates]
     #adjust_weights(weights)
-    logging.info(f"{weights[0].shape=}")
+    logging.info(f"{weights.shape=}")
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
     print(f"done")
     if optim == 'rmsprop':
-        opt : torch.optim.Optimizer = torch.optim.RMSprop(weights, lr=lr)
+        opt : torch.optim.Optimizer = torch.optim.RMSprop([weights], lr=lr)
     elif optim == 'adam':
-        opt = torch.optim.Adam(weights, lr=lr)
+        opt = torch.optim.Adam([weights], lr=lr)
     elif optim == 'sgd':
-        opt = torch.optim.SGD(weights, lr=lr)
+        opt = torch.optim.SGD([weights], lr=lr)
     else:
         assert False
 
@@ -225,12 +227,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.zero_grad()
 
         if dropout != 0:
-            moved : Sequence[torch.Tensor] = [w.softmax(-1) * (1-dropout) + 
-                torch.distributions.Dirichlet(torch.ones_like(w)).sample() * dropout
-                for w in weights]
-            raise NotImplementedError()
+            moved : torch.Tensor = weights.softmax(-1) * (1-dropout) * torch.rand(weights.shape, device=weights.device)
         else:
-            moved = [w.softmax(-1).where(rulebook.mask.unsqueeze(1).unsqueeze(1), torch.zeros(size=(),device=dev)) for w in weights]
+            moved = mask(weights.softmax(-1), rulebook)
         target_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
         report_loss = target_loss.mean()
         if batch_size is not None:
@@ -244,8 +243,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         target_loss.backward()
 
         if normalize_threshold is None or target_loss.item() < normalize_threshold:
-            entropy_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
-                 * norm_weight / sum(w.numel() for w in weights)
+            entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook)).mean()
             entropy_loss.backward()
         else:
             entropy_loss = torch.as_tensor(0.0)
@@ -262,9 +260,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
     dilp.print_program(rulebook, weights, pred_dict)
 
-    final_loss, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = [w.softmax(-1) for w in weights], targets=targets, target_values=target_values, steps=steps)
-    crisp = [(w if w.numel() == 0 else 
-        torch.nn.functional.one_hot(w.max(-1)[1], w.shape[-1]).float()) for w in weights]
+    final_loss, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = mask(weights.softmax(-1), rulebook), targets=targets, target_values=target_values, steps=steps)
+    crisp = mask(torch.nn.functional.one_hot(weights.max(-1)[1], weights.shape[-1]).float(), rulebook)
     #crisp : Sequence[torch.Tensor] = [c.float().where(c == 1, torch.as_tensor(-float('inf'), device=c.device)) for c in c0]
     crisp_loss, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=steps)
     report = torch.cat([target_values.unsqueeze(1), fuzzy_report.unsqueeze(1), crisp_report.unsqueeze(1)], dim=1).detach().cpu().numpy()
