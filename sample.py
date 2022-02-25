@@ -8,6 +8,7 @@ import logging
 #from core import Term, Atom
 from typing import *
 import itertools
+import GPUtil #type: ignore
 
 # relationship will refer to 'track' in all of your examples
 relationship = pp.Word(pp.alphas).setResultsName('relationship', listAllMatches=True)
@@ -74,7 +75,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         unary : Set[str] = set(), init_rand : float = 10,
         layers : Optional[List[int]] = None, info : bool = False,
         recursion : bool = True, normalize_threshold : Optional[float] = None,
+        invented_recursion : bool = True,
         seed : Optional[int] = 0, dropout : float = 0,
+        batch_size : Optional[int] = None,
         mode : bool = False, functional : bool = False):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -133,6 +136,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     pred_dict_rev,atom_dict_rev = revDict(pred_dict),revDict(atom_dict)
     unary_preds : Set[int] = set(pred_dict_rev[u] for u in unary)
     invented_preds = set(pred_dict_rev[f"inv_{i}"] for i in range(0, inv))
+    bk_preds = set(pred_dict_rev[p] for p in pred_f)
 
     #mode Declaration stuff
     inPosOne = [pred_dict_rev[x] for x in inPosOne]
@@ -167,6 +171,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                 for p2 in range(pred_dim):
                     for v1, v2, v3, v4 in itertools.product(range(3),range(3),range(3),range(3)):
                         if any(p == head_pred and a == 0 and b == 1 for (p,a,b) in {(p1,v1,v2),(p2,v3,v4)} ): continue #self recursion
+                        if head_pred in unary_preds and any(p == head_pred and a == 0 or b == 1 for (p,a,b) in {(p1,v1,v2),(p2,v3,v4)} ): continue
 
                         if head_pred in unary_preds and 1 in {v1,v2,v3,v4}: continue #using second arg of unary target
                         if head_pred in unary_preds and not 0 in {v1,v2,v3,v4}: continue #datalog on unary target
@@ -178,6 +183,11 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                         if p2 < p1 : continue # we should not check the symmetric case.
 
                         if functional and p1==p2 and p1 in func and v1 == v3 and v2 != v4: continue # should return the same thing for same arguments
+
+                        if not invented_recursion and head_pred in invented_preds and any(p == head_pred or p == 0 for p in {p1,p2}): continue
+                        
+                        #TO BE REMOVED
+                        #if not invented_recursion and head_pred in invented_preds and any(p in invented_preds and p != head_pred + 10 for p in {p1,p2}): continue
 
                         # existential vars cannot be in in-positions without there being an out position in another predicate in the clause
                         if mode and p1 in inPosOne and  v1 == 2 and ((not 2 in {v3,v4}) or (v3 == 2 and  p2 in inPosOne) or (v4 == 2 and  p2 in inPosTwo)) : continue
@@ -246,11 +256,20 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                 for w in weights]
         else:
             moved = [w.softmax(-1) for w in weights]
+
         target_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
-        target_loss = target_loss.mean()
+        report_loss = target_loss.mean()
+        if batch_size is not None:
+            assert batch_size <= len(positive_targets) and batch_size <= len(negative_targets)
+            chosen_positive = torch.randperm(len(positive_targets), device=dev) >= len(positive_targets) - batch_size
+            chosen_negative = torch.randperm(len(negative_targets), device=dev) >= len(negative_targets) - batch_size
+            chosen = torch.cat((chosen_positive, chosen_negative))
+            target_loss = target_loss.where(chosen, torch.as_tensor(0.0, device=dev)).sum() / chosen.sum()
+        else:
+            target_loss = target_loss.mean()
         target_loss.backward()
 
-        if normalize_threshold is None or target_loss.item() < normalize_threshold:
+        if normalize_threshold is None or report_loss.item() < normalize_threshold:
             entropy_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
                  * norm_weight / sum(w.numel() for w in weights)
             entropy_loss.backward()
@@ -263,9 +282,12 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.step()
         #adjust_weights(weights)
 
-        tq.set_postfix(target_loss = target_loss.item(), entropy_loss = entropy_loss.item())
+        #if epoch % 25 == 0:
+            #gpu_util = [gpu.load for gpu in GPUtil.getGPUs()]
 
-        logging.info(f"target loss: {target_loss.item()} entropy loss: {entropy_loss.item()}")
+        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item())#, gpu_util=gpu_util)
+
+        logging.info(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
 
     dilp.print_program(rulebook, weights, pred_dict)
 
