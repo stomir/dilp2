@@ -9,6 +9,8 @@ import logging
 from typing import *
 import GPUtil #type: ignore
 import itertools
+import numpy
+import random
 
 # relationship will refer to 'track' in all of your examples
 relationship = pp.Word(pp.alphas).setResultsName('relationship', listAllMatches=True)
@@ -94,6 +96,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         logging.getLogger().setLevel(logging.DEBUG)
 
     if seed is not None:
+        torch.use_deterministic_algorithms(True)
+        numpy.random.seed(seed)
+        random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed) #type: ignore
 
