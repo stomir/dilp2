@@ -73,11 +73,11 @@ def set_norm(norm_name : str):
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]
 
-def rule_str(rule : int, clause : int, predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
+def rule_str(chosen_rules : List[int], clause : int, predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
     ret = []
-    for i in range(0, rulebook.body_predicates[predicate].shape[2]):
-        vs = ','.join(map(lambda v: chr(ord('A')+v), var_choices(int(rulebook.variable_choices[predicate][clause,rule,i]))))
-        ret.append(f'{pred_names[int(rulebook.body_predicates[predicate][clause,rule,i].item())]}({vs})')
+    for rule in chosen_rules:
+        vs = ','.join(map(lambda v: chr(ord('A')+v), var_choices(int(rulebook.variable_choices[predicate][rule]))))
+        ret.append(f'{pred_names[int(rulebook.body_predicates[predicate][rule].item())]}({vs})')
     return ','.join(ret)
 
 def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
@@ -159,18 +159,18 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.
         steps : int = 2, vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
     val = infer_steps(steps, base_val, rulebook, weights, vars)
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
-    #return (preds - target_values).square(), preds
-    return (- (preds.log() * target_values + (1-preds).log() * (1-target_values))), preds
+    return (preds - target_values).square(), preds
+    #return (- (preds.log() * target_values + (1-preds).log() * (1-target_values))), preds
     
-def print_program(rulebook : Rulebook, weights : Sequence[torch.Tensor], pred_names : Dict[int,str], elements : int = 3):
+def print_program(rulebook : Rulebook, weights : Sequence[torch.Tensor], pred_names : Dict[int,str], elements : int = 2):
     for pred, rules in enumerate(rulebook.body_predicates):
         if rules.numel() == 0:
             continue
         pred_name = pred_names[pred]
         wei = weights[pred].detach().softmax(-1).cpu()
-        for clause in range(0, rules.shape[0]):
-            values, idxs = wei[clause].sort(descending=True)
+        for clause in range(0, 2):
+            values, idxs = wei[clause].sort(-1,descending=True)
             ret = []
             for elem in range(0, elements):
-                ret.append(f"[{rule_str(int(idxs[elem]), clause, pred, rulebook, pred_names)} x{values[elem].item():.5f}]")
+                ret.append(f"[{rule_str([int(idxs[i][elem]) for i in range(2)], clause, pred, rulebook, pred_names)} x{[values[i][elem].item() for i in range(2)]}]")
             print(f"{pred_name.rjust(10, ' ')}(A,B) :- " + ' '.join(x.ljust(50, ' ') for x in ret))

@@ -98,7 +98,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     rules_dim = ((pred_dim-1)**2)*81
     #fact_names = [ x.predicate for x in pred_f]
     target_facts = P+N
-    #var_names = [Term(True, f'X_{i}') for i in range(3)]
+    #var_names = [Term(True, f'X2700 kch to eur_{i}') for i in range(3)]
 
     pred_dict : Dict[int, str] = dict(zip(list(range(pred_dim)),[target]+list(pred_f)+invented_names))
     atom_dict = dict(zip(list(range(atom_dim)),list(constants_f)))
@@ -222,8 +222,12 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     dilp.print_program(rulebook, weights, pred_dict)
 
     _, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = [w.softmax(-1) for w in weights], targets=targets, target_values=target_values, steps=steps)
-    crisp = [torch.nn.functional.one_hot(w.max(-1)[1], w.shape[-1]) for w in weights]
+    crisp = [(w if w.numel() == 0 else 
+        torch.nn.functional.one_hot(w.max(-1)[1], w.shape[-1]).float()) for w in weights]
     #crisp : Sequence[torch.Tensor] = [c.float().where(c == 1, torch.as_tensor(-float('inf'), device=c.device)) for c in c0]
+    for c, w in zip(crisp, weights):
+        assert w.shape == c.shape
+        logging.info(f"{c=} {w.softmax(-1)=}")
     _, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=steps)
     report = torch.cat([target_values.unsqueeze(1), fuzzy_report.unsqueeze(1), crisp_report.unsqueeze(1)], dim=1).detach().cpu().numpy()
     print('report:\n', report)
