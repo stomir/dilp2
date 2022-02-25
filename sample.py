@@ -78,8 +78,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
 
     true_facts, pred_f, constants_f = process_file('%s/facts.dilp' % task)
-    P, target_p, constants_p = process_file('%s/positive.dilp' % task)
-    N, target_n, constants_n = process_file('%s/negative.dilp' % task)
+    positive_targets, target_p, constants_p = process_file('%s/positive.dilp' % task)
+    negative_targets, target_n, constants_n = process_file('%s/negative.dilp' % task)
 
     if not (target_p == target_n):
         raise Exception('Positive and Negative files have different targets')
@@ -91,13 +91,13 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
     invented_names= ["inv_"+str(x) for x in range(inv)]
     target = next(iter(target_p))
-    target_arity = len(P[0][1])
-    count_examples = len(P)+len(N)
+    target_arity = len(positive_targets[0][1])
+    count_examples = len(positive_targets)+len(negative_targets)
     pred_dim = len(pred_f)+inv+1
     atom_dim = len(constants_f)
     rules_dim = ((pred_dim-1)**2)*81
     #fact_names = [ x.predicate for x in pred_f]
-    target_facts = P+N
+    target_facts = positive_targets+negative_targets
     #var_names = [Term(True, f'X_{i}') for i in range(3)]
 
     pred_dict : Dict[int, str] = dict(zip(list(range(pred_dim)),[target]+list(pred_f)+invented_names))
@@ -159,7 +159,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                         vc2 = v3 * 3 + v4
                         ret_bp.append((p1,p2))
                         ret_vc.append((vc1,vc2))
-                        #logging.info(f"rule {pred_dict[head_pred]}(0,1) :- {pred_dict[p1]}({v1},{v2}), {pred_dict[p2]}({v3,v4})")
+                        logging.debug(f"rule {pred_dict[head_pred]}(0,1) :- {pred_dict[p1]}({v1},{v2}), {pred_dict[p2]}({v3,v4})")
 
         bp = torch.as_tensor(ret_bp, device=dev, dtype=torch.long).unsqueeze(0).repeat(2,1,1)
         vc = torch.as_tensor(ret_vc, device=dev, dtype=torch.long).unsqueeze(0).repeat(2,1,1)
@@ -171,7 +171,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     for x in range(len(target_facts)):
         for y in range(target_arity):
             targets[x][y+1] = atom_dict_rev[target_facts[x][1][y]]
-            target_values[x] = float(x < len(P))
+            target_values[x] = float(x < len(positive_targets))
 
     rulebook = dilp.Rulebook(body_predicates,variable_choices)
 

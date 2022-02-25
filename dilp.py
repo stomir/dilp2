@@ -144,14 +144,14 @@ def infer_single_step(ex_val : torch.Tensor,
 
 def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor], vars : int = 3) -> torch.Tensor:
     val = base_val
-    vals : List[torch.Tensor] = []
+    #vals : List[torch.Tensor] = []
     for i in range(0, steps):
         val2 = extend_val(val, vars)
         val2 = infer_single_step_optimized(val = val, rulebook = rulebook, weights = weights)
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
-        vals.append(val2.unsqueeze(0))
+        #vals.append(val2.unsqueeze(0))
         val = disjunction2(val, val2)
-    return disjunction_dim(torch.cat(vals), 0)
+    #return disjunction_dim(torch.cat(vals), 0)
     return val
         
 def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor],
@@ -161,7 +161,8 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.
     val = infer_steps(steps, base_val, rulebook, weights, vars)
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
     #return (preds - target_values).square(), preds
-    return (- (preds.log() * target_values + (1-preds).log() * (1-target_values))), preds
+    #return torch.nn.CrossEntropyLoss()(torch.)
+    return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
     
 def print_program(rulebook : Rulebook, weights : Sequence[torch.Tensor], pred_names : Dict[int,str], elements : int = 3):
     for pred, rules in enumerate(rulebook.body_predicates):
