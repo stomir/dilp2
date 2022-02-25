@@ -75,6 +75,11 @@ def merge_mask(ts : List[torch.Tensor], dim : int = 0, newdim : int = 0) -> torc
 def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
     return t.where(rulebook.mask.unsqueeze(1).unsqueeze(1), torch.zeros(size=(),device=t.device))
 
+def masked_softmax(t : torch.Tensor, mask : torch.Tensor) -> torch.Tensor:
+    t = t.where(mask, torch.as_tensor(-float('inf'), device=t.device)).softmax(-1)
+    t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device))
+    return t
+
 def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 0,
         debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
@@ -229,7 +234,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         if dropout != 0:
             moved : torch.Tensor = weights.softmax(-1) * (1-dropout) * torch.rand(weights.shape, device=weights.device)
         else:
-            moved = mask(weights.softmax(-1), rulebook)
+            moved = masked_softmax(weights, rulebook.mask.unsqueeze(1).unsqueeze(1))
         target_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
         report_loss = target_loss.mean()
         if batch_size is not None:
@@ -258,9 +263,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
         logging.info(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
 
-    dilp.print_program(rulebook, weights, pred_dict)
+    dilp.print_program(rulebook, mask(weights, rulebook), pred_dict)
 
-    final_loss, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = mask(weights.softmax(-1), rulebook), targets=targets, target_values=target_values, steps=steps)
+    final_loss, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = masked_softmax(weights, rulebook.mask.unsqueeze(1).unsqueeze(1)), targets=targets, target_values=target_values, steps=steps)
     crisp = mask(torch.nn.functional.one_hot(weights.max(-1)[1], weights.shape[-1]).float(), rulebook)
     #crisp : Sequence[torch.Tensor] = [c.float().where(c == 1, torch.as_tensor(-float('inf'), device=c.device)) for c in c0]
     crisp_loss, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=steps)

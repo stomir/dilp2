@@ -147,7 +147,8 @@ def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict
         if rules.numel() == 0:
             continue
         pred_name = pred_names[pred]
-        wei = weights[pred].detach().softmax(-1).cpu()
+        if weights[pred].sum().item() == 0: continue
+        wei = weights[pred].detach().cpu()
         for clause in range(0, 2):
             values, idxs = wei[clause].sort(-1,descending=True)
             ret = []
