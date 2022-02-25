@@ -229,10 +229,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.step()
         #adjust_weights(weights)
 
-        if epoch % 100 == 0:
-            gpu_util = [gpu.load for gpu in GPUtil.getGPUs()]
-
-        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), gpu_util = gpu_util)
+        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item())
 
         logging.info(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
 
