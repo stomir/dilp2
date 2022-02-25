@@ -26,7 +26,8 @@ def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
 
 #'''
 def disjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
-    return torch.max(a, b)
+    #return torch.max(a, b)
+    return a.where(a>b, b)
 
 def disjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return torch.max(a, dim=dim)[0]
@@ -75,7 +76,7 @@ def var_choices(n : int, vars : int = 3) -> List[int]:
 def rule_str(rule : int, clause : int, predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
     ret = []
     for i in range(0, rulebook.body_predicates[predicate].shape[2]):
-        vs = ','.join(map(lambda v: chr(ord('A')+v),  var_choices(int(rulebook.variable_choices[predicate][clause,rule,i]))))
+        vs = ','.join(map(lambda v: chr(ord('A')+v), var_choices(int(rulebook.variable_choices[predicate][clause,rule,i]))))
         ret.append(f'{pred_names[int(rulebook.body_predicates[predicate][clause,rule,i].item())]}({vs})')
     return ','.join(ret)
 
@@ -132,7 +133,8 @@ def infer_single_step(ex_val : torch.Tensor,
     #existential quantification
     ex_val = disjunction_dim(ex_val, -1)
     #rule weighing
-    rule_weights = rule_weights.softmax(-1).unsqueeze(-1).unsqueeze(-1)
+    #rule_weights = rule_weights.softmax(-1)
+    rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1)
     ex_val = ex_val * rule_weights
     ex_val = ex_val.sum(dim = -3)
     #disjunction on clauses
@@ -142,11 +144,14 @@ def infer_single_step(ex_val : torch.Tensor,
 
 def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor], vars : int = 3) -> torch.Tensor:
     val = base_val
+    vals : List[torch.Tensor] = []
     for i in range(0, steps):
-        #val2 = extend_val(val, vars)
+        val2 = extend_val(val, vars)
         val2 = infer_single_step_optimized(val = val, rulebook = rulebook, weights = weights)
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
+        vals.append(val2.unsqueeze(0))
         val = disjunction2(val, val2)
+    return disjunction_dim(torch.cat(vals), 0)
     return val
         
 def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.Tensor],
@@ -155,7 +160,8 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : Sequence[torch.
         steps : int = 2, vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
     val = infer_steps(steps, base_val, rulebook, weights, vars)
     preds = val[targets[:,0],targets[:,1],targets[:,2]]
-    return (preds - target_values).square(), torch.cat((target_values.unsqueeze(1), preds.unsqueeze(1)), dim=1)
+    #return (preds - target_values).square(), preds
+    return (- (preds.log() * target_values + (1-preds).log() * (1-target_values))), preds
     
 def print_program(rulebook : Rulebook, weights : Sequence[torch.Tensor], pred_names : Dict[int,str], elements : int = 3):
     for pred, rules in enumerate(rulebook.body_predicates):
