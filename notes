@@ -1,0 +1,5 @@
+this command did find fizz:
+
+python3 sample.py examples/fizz --inv 6 --epochs 1000  --norm mixed --norm_weight 1 --optim adam --steps 12 --unary zero,fizz --cuda True --mode True --functional True --normalize_threshold 1e-2
+
+this works for `even` if target is in
