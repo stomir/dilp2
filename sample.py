@@ -34,7 +34,23 @@ prolog_sentences = pp.OneOrMore(sentence)
 
 def revDict(d):
     return {value: key for (key,value) in d.items()}
-
+def checkFunctional(s, functional):
+    ss = s.replace('\n', '').split("::")
+    print(s,ss,functional)
+    if (functional and len(ss) != 4):
+        raise Exception('Incorrect Mode Declaration!')
+    if (not functional and len(ss) != 3):
+        raise Exception('Incorrect Mode Declaration!')
+    return ss
+def process_mode_file(filename,functional):
+    with open(filename) as f:
+        data = [ checkFunctional(x,functional) for x in f]
+        results = [[] for x in range(3)]
+        for d in data:
+            for i in range(1,len(d)):
+                if d[i]=='+':
+                    results[i-1].append(d[0])
+        return *tuple(results),len(data)
 def process_file(filename) -> Tuple[List[Tuple[str,List[str]]],Set[str],Set[str]]:
     atoms : List[Tuple[str,List[str]]] = []
     predicates : Set[str] = set()
@@ -58,7 +74,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         unary : Set[str] = set(), init_rand : float = 10,
         layers : Optional[List[int]] = None, info : bool = False,
         recursion : bool = True,
-        seed : Optional[int] = None, dropout : float = 0):
+        seed : Optional[int] = 0, dropout : float = 0,
+        mode : bool = False, functional : bool = False):
     if info:
         logging.getLogger().setLevel(logging.INFO)
     if debug:
@@ -96,6 +113,10 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     pred_dim = len(pred_f)+inv+1
     atom_dim = len(constants_f)
     rules_dim = ((pred_dim-1)**2)*81
+    inPosOne, inPosTwo,func,modeCount = process_mode_file('%s/mode.dilp' % task,functional) if mode else ([],[],[],pred_dim)
+    if modeCount!= pred_dim:
+            raise Exception('Insufficient or too many Mode Declarations!')
+
     #fact_names = [ x.predicate for x in pred_f]
     target_facts = positive_targets+negative_targets
     #var_names = [Term(True, f'X_{i}') for i in range(3)]
@@ -112,6 +133,11 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     pred_dict_rev,atom_dict_rev = revDict(pred_dict),revDict(atom_dict)
     unary_preds : Set[int] = set(pred_dict_rev[u] for u in unary)
     invented_preds = set(pred_dict_rev[f"inv_{i}"] for i in range(0, inv))
+
+    #mode Declaration stuff
+    inPosOne = [pred_dict_rev[x] for x in inPosOne]
+    inPosTwo = [pred_dict_rev[x] for x in inPosTwo]
+    func = [pred_dict_rev[x] for x in func]
 
     if layers is None:
         layer_dict : Dict[int, int] = dict()
@@ -141,12 +167,30 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                 for p2 in range(pred_dim):
                     for v1, v2, v3, v4 in itertools.product(range(3),range(3),range(3),range(3)):
                         if any(p == head_pred and a == 0 and b == 1 for (p,a,b) in {(p1,v1,v2),(p2,v3,v4)} ): continue #self recursion
-                        
+
                         if head_pred in unary_preds and 1 in {v1,v2,v3,v4}: continue #using second arg of unary target
-                        
-                        if p1 in unary_preds: v1 = v2
-                        if p2 in unary_preds: v3 = v4
-                        
+                        if head_pred in unary_preds and not 0 in {v1,v2,v3,v4}: continue #datalog on unary target
+                        if not head_pred in unary_preds and not ( 0 in {v1,v2,v3,v4} or  1 in {v1,v2,v3,v4}): continue #datalog on binary target
+
+                        if p1 in unary_preds and v1!= v2: continue # only consider when vars are equal
+                        if p2 in unary_preds and v3 != v4: continue # only consider when vars are equal
+
+                        if p2 < p1 : continue # we should not check the symmetric case.
+
+                        if functional and p1==p2 and p1 in func and v1 == v3 and v2 != v4: continue # should return the same thing for same arguments
+
+                        # existential vars cannot be in in-positions without there being an out position in another predicate in the clause
+                        if mode and p1 in inPosOne and  v1 == 2 and ((not 2 in {v3,v4}) or (v3 == 2 and  p2 in inPosOne) or (v4 == 2 and  p2 in inPosTwo)) : continue
+                        if mode and p1 in inPosTwo and  v2 == 2 and ((not 2 in {v3,v4}) or (v3 == 2 and  p2 in inPosOne) or (v4 == 2 and  p2 in inPosTwo)) : continue
+                        if mode and p2 in inPosOne and  v3 == 2 and ((not 2 in {v1,v2}) or (v1 == 2 and  p1 in inPosOne) or (v2 == 2 and  p1 in inPosTwo)) : continue
+                        if mode and p2 in inPosTwo and  v4 == 2 and ((not 2 in {v1,v2}) or (v1 == 2 and  p1 in inPosOne) or (v2 == 2 and  p1 in inPosTwo)) : continue
+
+                        # an out position of the head_predicate can never be an in position
+                        if mode and not head_pred in inPosOne and  p1 in inPosOne and v1==0 : continue
+                        if mode and not head_pred in inPosTwo and  p1 in inPosOne and v1==1 : continue
+                        if mode and not head_pred in inPosOne and  p2 in inPosOne and v3==0 : continue
+                        if mode and not head_pred in inPosTwo and  p2 in inPosOne and v3==1 : continue
+
                         #if any(head_pred in invented_preds and p in invented_preds and p < head_pred for p in {p1,p2}): continue
 
                         if not recursion and head_pred in {p1, p2}: continue
@@ -186,7 +230,6 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     logging.info(f"{weights[0].shape=}")
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
-    print(f"done")
     if optim == 'rmsprop':
         opt : torch.optim.Optimizer = torch.optim.RMSprop(weights, lr=lr)
     elif optim == 'adam':
@@ -198,7 +241,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.zero_grad()
 
         if dropout != 0:
-            moved : Sequence[torch.Tensor] = [w.softmax(-1) * (1-dropout) + 
+            moved : Sequence[torch.Tensor] = [w.softmax(-1) * (1-dropout) +
                 torch.distributions.Dirichlet(torch.ones_like(w)).sample() * dropout
                 for w in weights]
         else:
