@@ -1,43 +1,35 @@
+from sys import exec_prefix
 import torch
 import logging
 from typing import *
+
+from zmq import device
 import weird
 
 class Rulebook(NamedTuple):
-    body_predicates : Sequence[torch.Tensor]
-    variable_choices : Sequence[torch.Tensor]
+    body_predicates : torch.Tensor
+    variable_choices : torch.Tensor
+    mask : torch.Tensor
 
-    def to(self, device : torch.device) -> 'Rulebook':
-        return Rulebook(
-            body_predicates = list(t.to(device) for t in self.body_predicates),
-            variable_choices = list(t.to(device) for t in self.variable_choices))
-#'''
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return 1 - (1 - a) * (1 - b)
-
 def disjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return 1 - ((1 - a).prod(dim = dim))
-
 def conjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a * b
 def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return a.prod(dim=dim)
-#'''
 
-#'''
 def disjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     #return torch.max(a, b)
     return a.where(a>b, b)
-
 def disjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return torch.max(a, dim=dim)[0]
-
 def conjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return torch.min(a, b)
-
 def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return a.min(dim=dim)[0]
-#'''
+
 
 disjunction2 = disjunction2_max
 disjunction_dim = disjunction_dim_max
@@ -127,11 +119,13 @@ def infer_single_step(ex_val : torch.Tensor,
         rule_weights : torch.Tensor) -> torch.Tensor:
     logging.debug(f"{ex_val.shape=} {body_predicates.shape=} {variable_choices.shape=}")
     ex_val = ex_val[body_predicates, variable_choices]
-    logging.debug(f"{ex_val.shape=}")
     #rule weighing
     rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+    ex_val = ex_val.unsqueeze(-5).unsqueeze(-5)
+    logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
     ex_val = ex_val * rule_weights
     ex_val = ex_val.sum(dim = -4)
+    ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
     #conjuction of body predictes
     ex_val = conjunction_dim(ex_val, -4)
     #existential quantification
@@ -146,7 +140,8 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
     vals : List[torch.Tensor] = []
     for i in range(0, steps):
         val2 = extend_val(val, vars)
-        val2 = infer_single_step_optimized(val = val, rulebook = rulebook, weights = weights)
+        val2 = infer_single_step(ex_val = val2, body_predicates=rulebook.body_predicates, variable_choices=rulebook.variable_choices, \
+            rule_weights = weights[0])
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         vals.append(val2.unsqueeze(0))
         val = disjunction2(val, val2)

@@ -53,6 +53,25 @@ def process_file(filename) -> Tuple[List[Tuple[str,List[str]]],Set[str],Set[str]
             constants.update((term for term in result['arguments'][idx]))
     return atoms, predicates, constants
 
+def merge_pad(ts : List[torch.Tensor], dim : int = 0, newdim : int = 0) -> torch.Tensor:
+    max_len = max(len(t) for t in ts)
+    def required_shape(t : torch.Tensor) -> List[int]:
+        ret = list(t.shape)
+        ret[dim] = max_len - ret[dim]
+        return ret
+    ts = list(torch.cat((t, torch.zeros(size=required_shape(t), device=t.device, dtype=t.dtype)), dim=dim).unsqueeze(newdim) for t in ts)
+    return torch.cat(ts, dim=newdim)
+
+def merge_mask(ts : List[torch.Tensor], dim : int = 0, newdim : int = 0) -> torch.Tensor:
+    max_len = max(len(t) for t in ts)
+    def required_shape(t : torch.Tensor) -> List[int]:
+        ret = list(t.shape)
+        ret[dim] = max_len - ret[dim]
+        return ret
+    ts = list(torch.cat((torch.ones_like(t), 
+        torch.as_tensor(-float('inf'), device=t.device).repeat(required_shape(t))), dim=dim).unsqueeze(newdim) for t in ts)
+    return torch.cat(list(ts), dim=newdim)
+
 def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 0,
         debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
@@ -121,8 +140,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         layer_dict = dict(zip(invented_preds, sum(([i for _ in range(layer)] for i, layer in enumerate(layers)), start=[])))
 
     base_val = torch.zeros([pred_dim, atom_dim, atom_dim], dtype=torch.float, device=dev)
-    body_predicates = []
-    variable_choices = []
+    body_predicates : List[torch.Tensor] = []
+    variable_choices : List[torch.Tensor] = []
     targets = torch.full([count_examples,target_arity+1], pred_dict_rev[target], dtype=torch.long, device=dev)
     target_values = torch.zeros([count_examples], dtype=torch.float, device=dev)
 
@@ -177,15 +196,17 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             targets[x][y+1] = atom_dict_rev[target_facts[x][1][y]]
             target_values[x] = float(x < len(positive_targets))
 
-    rulebook = dilp.Rulebook(body_predicates,variable_choices)
+    rulebook = dilp.Rulebook(merge_pad(body_predicates),merge_pad(variable_choices),merge_pad([torch.ones_like(t).bool() for t in body_predicates]))
 
     #This should not be used. Instead one of the dictionaries should be used.
     #pred_names = list(pred_dict_rev.keys())
 
-    weights : List[torch.nn.Parameter] = [
+    shape = rulebook.body_predicates.shape
+    weights : List[torch.nn.Parameter] = \
+        [torch.nn.Parameter(torch.rand([shape[0],2,2,shape[1]], device=dev) * init_rand)]
         #torch.nn.Parameter(torch.normal(torch.zeros(size=bp.shape[:-1], device=dev), init_rand))
-        torch.nn.Parameter(torch.rand(size=(2, 2, len(bp)), device=dev)*init_rand)
-            for bp in rulebook.body_predicates]
+        #torch.nn.Parameter(torch.rand(size=(2, 2, len(bp)), device=dev)*init_rand)
+        #    for bp in rulebook.body_predicates]
     #adjust_weights(weights)
     logging.info(f"{weights[0].shape=}")
 
@@ -207,8 +228,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             moved : Sequence[torch.Tensor] = [w.softmax(-1) * (1-dropout) + 
                 torch.distributions.Dirichlet(torch.ones_like(w)).sample() * dropout
                 for w in weights]
+            raise NotImplementedError()
         else:
-            moved = [w.softmax(-1) for w in weights]
+            moved = [w.softmax(-1).where(rulebook.mask.unsqueeze(1).unsqueeze(1), torch.zeros(size=(),device=dev)) for w in weights]
         target_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
         report_loss = target_loss.mean()
         if batch_size is not None:
