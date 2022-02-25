@@ -73,7 +73,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
         unary : Set[str] = set(), init_rand : float = 10,
         layers : Optional[List[int]] = None, info : bool = False,
-        recursion : bool = True,
+        recursion : bool = True, normalize_threshold : Optional[float] = None,
         seed : Optional[int] = 0, dropout : float = 0,
         mode : bool = False, functional : bool = False):
     if info:
@@ -246,13 +246,16 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
                 for w in weights]
         else:
             moved = [w.softmax(-1) for w in weights]
-        mse_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
-        mse_loss = mse_loss.mean()
-        mse_loss.backward()
+        target_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
+        target_loss = target_loss.mean()
+        target_loss.backward()
 
-        entropy_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
+        if normalize_threshold is None or target_loss.item() < normalize_threshold:
+            entropy_loss : torch.Tensor = sum((norm_loss(w) for w in weights), start=torch.zeros(size=(), device=dev)) \
                  * norm_weight / sum(w.numel() for w in weights)
-        entropy_loss.backward()
+            entropy_loss.backward()
+        else:
+            entropy_loss = torch.as_tensor(0.0)
 
         if clip is not None:
             torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
@@ -260,9 +263,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.step()
         #adjust_weights(weights)
 
-        tq.set_postfix(mse_loss = mse_loss.item(), entropy_loss = entropy_loss.item())
+        tq.set_postfix(target_loss = target_loss.item(), entropy_loss = entropy_loss.item())
 
-        logging.info(f"mse loss: {mse_loss.item()} entropy loss: {entropy_loss.item()}")
+        logging.info(f"target loss: {target_loss.item()} entropy loss: {entropy_loss.item()}")
 
     dilp.print_program(rulebook, weights, pred_dict)
 
