@@ -235,6 +235,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt = torch.optim.SGD([weights], lr=lr)
     else:
         assert False
+        
+    entropy_enabled = normalize_threshold is None
 
     for epoch in (tq := tqdm(range(0, int(epochs)))):
         opt.zero_grad()
@@ -254,9 +256,13 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         else:
             target_loss = target_loss.mean()
         target_loss.backward()
-
-        if normalize_threshold is None or report_loss.item() < normalize_threshold:
-            entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook)).mean()
+            
+        if normalize_threshold is not None and report_loss.item() < normalize_threshold:
+            entropy_enabled = True
+            
+        if entropy_enabled:
+            entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
+            entropy_loss = mask(entropy_loss, rulebook).mean()
             entropy_loss.backward()
         else:
             entropy_loss = torch.as_tensor(0.0)
