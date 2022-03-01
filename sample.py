@@ -90,6 +90,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         recursion : bool = True, normalize_threshold : Optional[float] = None,
         invented_recursion : bool = False, batch_size : Optional[int] = None,
         init : str = 'uniform',
+        entropy_weight_step = 1e-2,
         seed : Optional[int] = None, dropout : float = 0):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -237,6 +238,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         assert False
         
     entropy_enabled = normalize_threshold is None
+    entropy_weight = 0.0
 
     for epoch in (tq := tqdm(range(0, int(epochs)))):
         opt.zero_grad()
@@ -263,6 +265,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         if entropy_enabled:
             entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
             entropy_loss = mask(entropy_loss, rulebook).mean()
+            if entropy_weight < 1.0 and report_loss.item() < normalize_threshold:
+                entropy_weight += entropy_weight_step
+            entropy_loss *= entropy_weight
             entropy_loss.backward()
         else:
             entropy_loss = torch.as_tensor(0.0)
@@ -273,7 +278,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.step()
         #adjust_weights(weights)
 
-        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item())
+        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item(), entropy_weight=entropy_weight)
 
         logging.info(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
 
