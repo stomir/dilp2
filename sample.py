@@ -89,6 +89,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         layers : Optional[List[int]] = None, info : bool = False,
         recursion : bool = True, normalize_threshold : Optional[float] = None,
         invented_recursion : bool = False, batch_size : Optional[int] = None,
+        init : str = 'uniform',
         seed : Optional[int] = None, dropout : float = 0):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -215,9 +216,11 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     #pred_names = list(pred_dict_rev.keys())
 
     shape = rulebook.body_predicates.shape
-    weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand([shape[0],2,2,shape[1]], device=dev) * init_rand)
-        #torch.nn.Parameter(torch.normal(torch.zeros(size=bp.shape[:-1], device=dev), init_rand))
+    #weights : torch.nn.Parameter = 
+    weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0],2,2,shape[1]], device=dev), std=init_rand)) \
+        if init == 'normal' else torch.nn.Parameter(torch.rand([shape[0],2,2,shape[1]], device=dev) * init_rand)
         #torch.nn.Parameter(torch.rand(size=(2, 2, len(bp)), device=dev)*init_rand)
+        #torch.nn.Parameter(torch.normal(torch.zeros(size=bp.shape[:-1], device=dev), init_rand))
         #    for bp in rulebook.body_predicates]
     #adjust_weights(weights)
     logging.info(f"{weights.shape=}")
@@ -252,7 +255,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
             target_loss = target_loss.mean()
         target_loss.backward()
 
-        if normalize_threshold is None or target_loss.item() < normalize_threshold:
+        if normalize_threshold is None or report_loss.item() < normalize_threshold:
             entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook)).mean()
             entropy_loss.backward()
         else:

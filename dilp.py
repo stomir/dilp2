@@ -142,7 +142,7 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
     #return (preds - target_values).square(), preds
     return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
     
-def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 2):
+def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 1):
     for pred, rules in enumerate(rulebook.body_predicates):
         if rules.numel() == 0:
             continue
@@ -153,5 +153,5 @@ def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict
             values, idxs = wei[clause].sort(-1,descending=True)
             ret = []
             for elem in range(0, elements):
-                ret.append(f"[{rule_str([int(idxs[i][elem]) for i in range(2)], clause, pred, rulebook, pred_names)} x{[values[i][elem].item() for i in range(2)]}]")
+                ret.append(rule_str([int(idxs[i][elem]) for i in range(2)], clause, pred, rulebook, pred_names) + '.')
             print(f"{pred_name.rjust(10, ' ')}(A,B) :- " + ' '.join(x.ljust(50, ' ') for x in ret))
