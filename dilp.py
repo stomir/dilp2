@@ -12,13 +12,13 @@ class Rulebook(NamedTuple):
     mask : torch.Tensor
 
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
-    return 1 - (1 - a) * (1 - b)
+    return a + b - a * b
 def disjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
-    return 1 - ((1 - a).prod(dim = dim))
+    return a.sum(dim = dim) - a.prod(dim = dim)
 def conjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a * b
-def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
-    return a.prod(dim=dim)
+#def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+#    return a.prod(dim=dim)
 
 def disjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     #return torch.max(a, b)
@@ -27,14 +27,14 @@ def disjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return torch.max(a, dim=dim)[0]
 def conjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return torch.min(a, b)
-def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
-    return a.min(dim=dim)[0]
+#def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+#    return a.min(dim=dim)[0]
 
 
 disjunction2 = disjunction2_max
 disjunction_dim = disjunction_dim_max
 conjunction2 = conjunction2_max
-conjunction_dim = conjunction_dim_max
+#conjunction_dim = conjunction_dim_max
 
 def set_norm(norm_name : str):
     global disjunction2, disjunction_dim, conjunction2, conjunction_dim
@@ -43,22 +43,22 @@ def set_norm(norm_name : str):
         disjunction2 = disjunction2_max
         disjunction_dim = disjunction_dim_max
         conjunction2 = conjunction2_max
-        conjunction_dim = conjunction_dim_max
+        #conjunction_dim = conjunction_dim_max
     elif norm_name == 'prod':
         disjunction2 = disjunction2_prod
         disjunction_dim = disjunction_dim_prod
         conjunction2 = conjunction2_prod
-        conjunction_dim = conjunction_dim_prod
+        #conjunction_dim = conjunction_dim_prod
     elif norm_name == 'mixed':
         disjunction2 = disjunction2_max
         disjunction_dim = disjunction_dim_max
         conjunction2 = conjunction2_prod
-        conjunction_dim = conjunction_dim_prod
+        #conjunction_dim = conjunction_dim_prod
     elif norm_name == 'weird':
         disjunction2 = weird.WeirdMax.apply #type: ignore
         conjunction2 = weird.WeirdMin.apply #type: ignore
         disjunction_dim = weird.WeirdMaxDim.apply #type: ignore
-        conjunction_dim = weird.WeirdMinDim.apply #type: ignore
+        #conjunction_dim = weird.WeirdMinDim.apply #type: ignore
     else:
         assert False
 
@@ -142,15 +142,16 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
     #return (preds - target_values).square(), preds
     return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
     
-def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 2):
+def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 1):
     for pred, rules in enumerate(rulebook.body_predicates):
         if rules.numel() == 0:
             continue
         pred_name = pred_names[pred]
-        wei = weights[pred].detach().softmax(-1).cpu()
+        if weights[pred].sum().item() == 0: continue
+        wei = weights[pred].detach().cpu()
         for clause in range(0, 2):
             values, idxs = wei[clause].sort(-1,descending=True)
             ret = []
             for elem in range(0, elements):
-                ret.append(f"[{rule_str([int(idxs[i][elem]) for i in range(2)], clause, pred, rulebook, pred_names)} x{[values[i][elem].item() for i in range(2)]}]")
+                ret.append(rule_str([int(idxs[i][elem]) for i in range(2)], clause, pred, rulebook, pred_names) + '.')
             print(f"{pred_name.rjust(10, ' ')}(A,B) :- " + ' '.join(x.ljust(50, ' ') for x in ret))

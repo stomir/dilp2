@@ -9,6 +9,8 @@ import logging
 from typing import *
 import GPUtil #type: ignore
 import itertools
+import numpy
+import random
 
 # relationship will refer to 'track' in all of your examples
 relationship = pp.Word(pp.alphas).setResultsName('relationship', listAllMatches=True)
@@ -75,6 +77,11 @@ def merge_mask(ts : List[torch.Tensor], dim : int = 0, newdim : int = 0) -> torc
 def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
     return t.where(rulebook.mask.unsqueeze(1).unsqueeze(1), torch.zeros(size=(),device=t.device))
 
+def masked_softmax(t : torch.Tensor, mask : torch.Tensor) -> torch.Tensor:
+    t = t.where(mask, torch.as_tensor(-float('inf'), device=t.device)).softmax(-1)
+    t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device))
+    return t
+
 def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 0,
         debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
@@ -83,6 +90,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         recursion : bool = True, normalize_threshold : Optional[float] = None,
         invented_recursion : bool = False, batch_size : Optional[int] = None,
         normalize_gradients : Optional[float] = None,
+        init : str = 'uniform',
+        entropy_weight_step = 1e-2,
         seed : Optional[int] = None, dropout : float = 0):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -90,6 +99,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         logging.getLogger().setLevel(logging.DEBUG)
 
     if seed is not None:
+        torch.use_deterministic_algorithms(True)
+        numpy.random.seed(seed)
+        random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed) #type: ignore
 
@@ -206,9 +218,11 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
     #pred_names = list(pred_dict_rev.keys())
 
     shape = rulebook.body_predicates.shape
-    weights : torch.nn.Parameter = torch.nn.Parameter(torch.rand([shape[0],2,2,shape[1]], device=dev) * init_rand)
-        #torch.nn.Parameter(torch.normal(torch.zeros(size=bp.shape[:-1], device=dev), init_rand))
+    #weights : torch.nn.Parameter = 
+    weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0],2,2,shape[1]], device=dev), std=init_rand)) \
+        if init == 'normal' else torch.nn.Parameter(torch.rand([shape[0],2,2,shape[1]], device=dev) * init_rand)
         #torch.nn.Parameter(torch.rand(size=(2, 2, len(bp)), device=dev)*init_rand)
+        #torch.nn.Parameter(torch.normal(torch.zeros(size=bp.shape[:-1], device=dev), init_rand))
         #    for bp in rulebook.body_predicates]
     #adjust_weights(weights)
     logging.info(f"{weights.shape=}")
@@ -223,6 +237,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt = torch.optim.SGD([weights], lr=lr)
     else:
         assert False
+        
+    entropy_enabled = normalize_threshold is None
+    entropy_weight = 0.0
 
     for epoch in (tq := tqdm(range(0, int(epochs)))):
         opt.zero_grad()
@@ -230,7 +247,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         if dropout != 0:
             moved : torch.Tensor = weights.softmax(-1) * (1-dropout) * torch.rand(weights.shape, device=weights.device)
         else:
-            moved = mask(weights.softmax(-1), rulebook)
+            moved = masked_softmax(weights, rulebook.mask.unsqueeze(1).unsqueeze(1))
         target_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
         report_loss = target_loss.mean()
         if batch_size is not None:
@@ -242,9 +259,16 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         else:
             target_loss = target_loss.mean()
         target_loss.backward()
-
-        if normalize_threshold is None or target_loss.item() < normalize_threshold:
-            entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook)).mean()
+            
+        if normalize_threshold is not None and report_loss.item() < normalize_threshold:
+            entropy_enabled = True
+            
+        if entropy_enabled:
+            entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
+            entropy_loss = mask(entropy_loss, rulebook).mean()
+            if entropy_weight < 1.0 and report_loss.item() < normalize_threshold:
+                entropy_weight += entropy_weight_step
+            entropy_loss *= entropy_weight
             entropy_loss.backward()
         else:
             entropy_loss = torch.as_tensor(0.0)
@@ -261,13 +285,13 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.step()
         #adjust_weights(weights)
 
-        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item())
+        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item(), entropy_weight=entropy_weight)
 
         logging.info(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
 
-    dilp.print_program(rulebook, weights, pred_dict)
+    dilp.print_program(rulebook, mask(weights, rulebook), pred_dict)
 
-    final_loss, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = mask(weights.softmax(-1), rulebook), targets=targets, target_values=target_values, steps=steps)
+    final_loss, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = masked_softmax(weights, rulebook.mask.unsqueeze(1).unsqueeze(1)), targets=targets, target_values=target_values, steps=steps)
     crisp = mask(torch.nn.functional.one_hot(weights.max(-1)[1], weights.shape[-1]).float(), rulebook)
     #crisp : Sequence[torch.Tensor] = [c.float().where(c == 1, torch.as_tensor(-float('inf'), device=c.device)) for c in c0]
     crisp_loss, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=steps)
