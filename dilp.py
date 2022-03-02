@@ -14,11 +14,11 @@ class Rulebook(NamedTuple):
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a + b - a * b
 def disjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
-    return a.sum(dim = dim) - a.prod(dim = dim)
+    return 1 - ((1- a).prod(dim))
 def conjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a * b
-#def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
-#    return a.prod(dim=dim)
+def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+    return a.prod(dim=dim)
 
 def disjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     #return torch.max(a, b)
@@ -27,14 +27,14 @@ def disjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return torch.max(a, dim=dim)[0]
 def conjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return torch.min(a, b)
-#def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
-#    return a.min(dim=dim)[0]
+def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+    return a.min(dim=dim)[0]
 
 
 disjunction2 = disjunction2_max
 disjunction_dim = disjunction_dim_max
 conjunction2 = conjunction2_max
-#conjunction_dim = conjunction_dim_max
+conjunction_dim = conjunction_dim_max
 
 def set_norm(norm_name : str):
     global disjunction2, disjunction_dim, conjunction2, conjunction_dim
@@ -43,22 +43,22 @@ def set_norm(norm_name : str):
         disjunction2 = disjunction2_max
         disjunction_dim = disjunction_dim_max
         conjunction2 = conjunction2_max
-        #conjunction_dim = conjunction_dim_max
+        conjunction_dim = conjunction_dim_max
     elif norm_name == 'prod':
         disjunction2 = disjunction2_prod
         disjunction_dim = disjunction_dim_prod
         conjunction2 = conjunction2_prod
-        #conjunction_dim = conjunction_dim_prod
+        conjunction_dim = conjunction_dim_prod
     elif norm_name == 'mixed':
         disjunction2 = disjunction2_max
         disjunction_dim = disjunction_dim_max
         conjunction2 = conjunction2_prod
-        #conjunction_dim = conjunction_dim_prod
+        conjunction_dim = conjunction_dim_prod
     elif norm_name == 'weird':
         disjunction2 = weird.WeirdMax.apply #type: ignore
         conjunction2 = weird.WeirdMin.apply #type: ignore
         disjunction_dim = weird.WeirdMaxDim.apply #type: ignore
-        #conjunction_dim = weird.WeirdMinDim.apply #type: ignore
+        conjunction_dim = weird.WeirdMinDim.apply #type: ignore
     else:
         assert False
 

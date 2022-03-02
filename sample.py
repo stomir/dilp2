@@ -79,10 +79,10 @@ def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
 
 def masked_softmax(t : torch.Tensor, mask : torch.Tensor) -> torch.Tensor:
     t = t.where(mask, torch.as_tensor(-float('inf'), device=t.device)).softmax(-1)
-    t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device))
+    t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device)) #type: ignore
     return t
 
-def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : int = 0,
+def main(task, epochs : int = 100, steps : int = 1, cuda : Optional[int] = None, inv : int = 0,
         debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
         unary : Set[str] = set(), init_rand : float = 10,
@@ -99,7 +99,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         logging.getLogger().setLevel(logging.DEBUG)
 
     if seed is not None:
-        torch.use_deterministic_algorithms(True)
+        torch.use_deterministic_algorithms(True) #type: ignore
         numpy.random.seed(seed)
         random.seed(seed)
         torch.manual_seed(seed)
@@ -107,7 +107,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
     dilp.set_norm(norm)
 
-    dev = torch.device(0) if cuda else torch.device('cpu')
+    dev = torch.device(0) if cuda is not None else torch.device('cpu')
 
 
     if  inv<0:
@@ -266,9 +266,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         if entropy_enabled:
             entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
             entropy_loss = mask(entropy_loss, rulebook).mean()
-            if entropy_weight < 1.0 and report_loss.item() < normalize_threshold:
+            if entropy_weight < 1.0 and normalize_threshold is not None and report_loss.item() < normalize_threshold:
                 entropy_weight += entropy_weight_step
-            entropy_loss *= entropy_weight
+            entropy_loss *= entropy_weight * norm_weight
             entropy_loss.backward()
         else:
             entropy_loss = torch.as_tensor(0.0)
@@ -285,7 +285,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         opt.step()
         #adjust_weights(weights)
 
-        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item(), entropy_weight=entropy_weight)
+        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item(), entropy_weight=entropy_weight * norm_weight)
 
         logging.info(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
 
