@@ -82,6 +82,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         layers : Optional[List[int]] = None, info : bool = False,
         recursion : bool = True, normalize_threshold : Optional[float] = None,
         invented_recursion : bool = False, batch_size : Optional[int] = None,
+        normalize_gradients : Optional[float] = None,
         seed : Optional[int] = None, dropout : float = 0):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -250,6 +251,12 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
 
         if clip is not None:
             torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
+
+        if normalize_gradients is not None:
+            with torch.no_grad():
+                for w in weights:
+                    w /= w.sum(-1)
+                    w *= normalize_gradients
 
         opt.step()
         #adjust_weights(weights)
