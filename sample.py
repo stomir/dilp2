@@ -82,16 +82,17 @@ def masked_softmax(t : torch.Tensor, mask : torch.Tensor) -> torch.Tensor:
     t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device)) #type: ignore
     return t
 
-def main(task, epochs : int = 100, steps : int = 1, cuda : Optional[int] = None, inv : int = 0,
-        debug : bool = False, norm : str = 'max', norm_weight : float = 1.0,
+def main(task, epochs : int = 100, steps : int = 1, cuda : Optional[Union[int,bool]] = None, inv : int = 0,
+        debug : bool = False, norm : str = 'mixed', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
         unary : Set[str] = set(), init_rand : float = 10,
         layers : Optional[List[int]] = None, info : bool = False,
-        recursion : bool = True, normalize_threshold : Optional[float] = None,
-        invented_recursion : bool = False, batch_size : Optional[int] = None,
+        recursion : bool = True, normalize_threshold : Optional[float] = 1e-2,
+        invented_recursion : bool = True, batch_size : Optional[int] = None,
         normalize_gradients : Optional[float] = None,
         init : str = 'uniform',
-        entropy_weight_step = 1e-2,
+        entropy_weight_step = 1,
+        end_early : Optional[float] = 1e-4,
         seed : Optional[int] = None, dropout : float = 0):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -107,7 +108,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : Optional[int] = None,
 
     dilp.set_norm(norm)
 
-    dev = torch.device(0) if cuda is not None else torch.device('cpu')
+    dev = torch.device(cuda if type(cuda) == int else 0) if cuda is not None else torch.device('cpu')
 
 
     if  inv<0:
@@ -279,7 +280,8 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : Optional[int] = None,
         if normalize_gradients is not None:
             with torch.no_grad():
                 for w in weights:
-                    w /= w.sum(-1)
+                    #w /= w.sum(-1, keepdim=True) * w.sign()
+                    w[:] = torch.nn.functional.normalize(w, dim=-1)
                     w *= normalize_gradients
 
         opt.step()
@@ -288,6 +290,9 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : Optional[int] = None,
         tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item(), entropy_weight=entropy_weight * norm_weight)
 
         logging.info(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
+
+        if end_early is not None and report_loss.item() < end_early:
+            break
 
     dilp.print_program(rulebook, mask(weights, rulebook), pred_dict)
 

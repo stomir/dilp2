@@ -14,6 +14,8 @@ class Rulebook(NamedTuple):
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a + b - a * b
 def disjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+    if a.shape[dim] == 2:
+        disjunction2_prod(*a.split(1, dim=dim))
     return 1 - ((1- a).prod(dim))
 def conjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a * b
