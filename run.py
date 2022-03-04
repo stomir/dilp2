@@ -65,7 +65,7 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
     train_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('train')]
     val_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('val')]
 
-    base_val = torcher.base_val(problem, worlds = train_worlds)
+    base_val = torcher.base_val(problem, worlds = train_worlds).to(dev)
     positive_targets = torcher.targets(train_worlds, positive = True).to(dev)
     negative_targets = torcher.targets(train_worlds, positive = False).to(dev)
     targets, target_values = torcher.targets_tuple(train_worlds, device = dev)
@@ -155,7 +155,7 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
             fuzzy = weights.detach().to(dev)
             crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).float(), rulebook)
             if validation_steps is None:
-                validation_steps = steps
+                validation_steps = steps * 2
             for world in val_worlds:
                 base_val = torcher.base_val(problem, [world])
                 targets, target_values = torcher.targets_tuple([world], device = dev)
