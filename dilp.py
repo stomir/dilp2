@@ -11,6 +11,13 @@ class Rulebook(NamedTuple):
     variable_choices : torch.Tensor
     mask : torch.Tensor
 
+    def to(self, device : torch.device):
+        return Rulebook(
+            body_predicates=self.body_predicates.to(device),
+            variable_choices=self.variable_choices.to(device),
+            mask=self.mask.to(device)
+        )
+
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a + b - a * b
 def disjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
@@ -64,51 +71,42 @@ def set_norm(norm_name : str):
     else:
         assert False
 
-def var_choices(n : int, vars : int = 3) -> List[int]:
-    return [int(n) // vars, n % vars]
-
-def rule_str(chosen_rules : List[int], clause : int, predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
-    ret = []
-    for rule in chosen_rules:
-        vs = ','.join(map(lambda v: chr(ord('A')+v), var_choices(int(rulebook.variable_choices[predicate][rule]))))
-        ret.append(f'{pred_names[int(rulebook.body_predicates[predicate][rule].item())]}({vs})')
-    return ','.join(ret)
-
 def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
     i = 0
     ret = []
     shape = list(val.shape) + [val.shape[-1] for _ in range(0, vars - 2)]
-    valt = val.transpose(1, 2)
+    valt = val.transpose(2, 3)
     for arg1 in range(0, vars):
         for arg2 in range(0, vars):
             v = val
             if arg1 == arg2:
-                v = v.diagonal(dim1=1,dim2=2)
+                v = v.diagonal(dim1=2,dim2=3)
                 for _ in range(0, arg1):
-                    v = v.unsqueeze(1)
-                while len(v.shape) < vars+1:
+                    v = v.unsqueeze(2)
+                while len(v.shape) < vars+2:
                     v = v.unsqueeze(-1)
             else:
                 if arg2 < arg1:
                     v = valt
                 unused = (x for x in range(0, vars) if x not in {arg1, arg2})
                 for u in unused:
-                    v = v.unsqueeze(u + 1)
+                    v = v.unsqueeze(u + 2)
             v = torch.broadcast_to(v, shape) #type: ignore
-            v = v.unsqueeze(1)
+            v = v.unsqueeze(2)
             ret.append(v)
             i += 1
-    return torch.cat(ret, dim=1)
+    return torch.cat(ret, dim=2)
    
 
 def infer_single_step(ex_val : torch.Tensor, 
         body_predicates : torch.Tensor, variable_choices : torch.Tensor,
         rule_weights : torch.Tensor) -> torch.Tensor:
-    logging.debug(f"{ex_val.shape=} {body_predicates.shape=} {variable_choices.shape=}")
-    ex_val = ex_val[body_predicates, variable_choices]
+    logging.debug(f"{ex_val.shape=} {body_predicates.shape=} {variable_choices.shape=} {rule_weights.shape=}")
+    ex_val = ex_val[:, body_predicates, variable_choices]
     #rule weighing
-    rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-    ex_val = ex_val.unsqueeze(-5).unsqueeze(-5)
+    rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) #atoms
+    rule_weights = rule_weights.unsqueeze(0) #worlds
+    ex_val = ex_val#.unsqueeze(-5).unsqueeze(-5)
     logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
     ex_val = ex_val * rule_weights
     ex_val = ex_val.sum(dim = -4)
@@ -140,10 +138,20 @@ def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
         target_values : torch.Tensor,
         steps : int = 2, vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
     val = infer_steps(steps, base_val, rulebook, weights, vars)
-    preds = val[targets[:,0],targets[:,1],targets[:,2]]
+    preds = val[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]
     #return (preds - target_values).square(), preds
     return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
-    
+
+def var_choices(n : int, vars : int = 3) -> List[int]:
+    return [int(n) // vars, n % vars]
+
+def rule_str(chosen_rules : List[int], clause : int, predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
+    ret = []
+    for i, rule in enumerate(chosen_rules):
+        vs = ','.join(map(lambda v: chr(ord('A')+v), var_choices(int(rulebook.variable_choices[predicate,clause,i,rule]))))
+        ret.append(f'{pred_names[int(rulebook.body_predicates[predicate,clause,i,rule].item())]}({vs})')
+    return ','.join(ret)
+
 def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 1):
     for pred, rules in enumerate(rulebook.body_predicates):
         if rules.numel() == 0:
