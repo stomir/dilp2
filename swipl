@@ -1,0 +1,48 @@
+    target(A,B) :- inv_3(B,A),zero(A,A).                             
+    target(A,B) :- succ(C,A),inv_7(C,A).                             
+     inv_0(A,B) :- zero(C,A),zero(B,A).                              
+     inv_0(A,B) :- inv_9(C,B),inv_7(C,B).                            
+     inv_1(A,B) :- succ(B,A),inv_6(C,C).                             
+     inv_1(A,B) :- zero(B,B),inv_3(A,C).                             
+     inv_2(A,B) :- inv_6(C,C),succ(C,A).                             
+     inv_2(A,B) :- zero(C,B),zero(B,A).                              
+     inv_3(A,B) :- inv_7(B,A),succ(B,A).                             
+     inv_3(A,B) :- zero(C,A),zero(B,C).                              
+     inv_4(A,B) :- inv_3(B,C),inv_3(B,C).                            
+     inv_4(A,B) :- zero(A,B),zero(B,C).                              
+     inv_5(A,B) :- inv_7(C,C),inv_3(C,C).                            
+     inv_5(A,B) :- zero(B,B),succ(B,C).                              
+     inv_6(A,B) :- zero(C,B),zero(A,C).                              
+     inv_6(A,B) :- succ(A,C),succ(A,C).                              
+     inv_7(A,B) :- zero(B,C),zero(C,B).                              
+     inv_7(A,B) :- inv_9(C,C),succ(C,A).                             
+     inv_8(A,B) :- zero(A,C),zero(B,A).                              
+     inv_8(A,B) :- zero(C,C),inv_0(B,C).                             
+     inv_9(A,B) :- zero(A,B),zero(C,A).                              
+     inv_9(A,B) :- succ(C,B),inv_7(C,B).
+main :- 
+    current_prolog_flag(argv, [Directory]),
+    format('examples directory ~s\n', [Directory]),
+    string_concat(Directory, 'swipl_bk.pl', PathBK),
+    string_concat(Directory, 'swipl_val.pl', PathVal),
+    Files = [PathBK, PathVal],
+    load_files(Files),
+    load_input,
+    format('loaded files ~s ~s\n', Files),
+    format('result: '),
+    (
+        call_with_depth_limit(validate, 10000, _),
+        format('OK\n'),
+        halt(0)
+     ; 
+        format('FAIL\n'),
+        halt(1)
+    ).
+
+load_input :-
+    read(Clause),
+    ((Clause=end_of_file, !) ; 
+    (assertz(Clause), format('asserted ~w\n', [Clause]), load_input)).
+
+:- set_prolog_flag(verbose, silent).
+:- initialization main.
