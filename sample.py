@@ -89,8 +89,7 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         layers : Optional[List[int]] = None, info : bool = False,
         recursion : bool = True, normalize_threshold : Optional[float] = None,
         invented_recursion : bool = False, batch_size : Optional[int] = None,
-        init : str = 'uniform',
-        entropy_weight_step = 1e-2,
+        init : str = 'uniform', entropy_weight_step = 1.0,
         seed : Optional[int] = None, dropout : float = 0):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -262,9 +261,10 @@ def main(task, epochs : int = 100, steps : int = 1, cuda : bool = False, inv : i
         if normalize_threshold is not None and report_loss.item() < normalize_threshold:
             entropy_enabled = True
             
-        if entropy_enabled:
+        if normalize_threshold is not None and report_loss.item() < normalize_threshold:
             entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
-            entropy_loss = mask(entropy_loss, rulebook).mean()
+            #entropy_loss = mask(entropy_loss, rulebook)
+            entropy_loss = entropy_loss.mean()
             if entropy_weight < 1.0 and report_loss.item() < normalize_threshold:
                 entropy_weight += entropy_weight_step
             entropy_loss *= entropy_weight
