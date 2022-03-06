@@ -1,14 +1,24 @@
 #!/bin/bash
-EXAMPLE=$1
-RUNS=$2
-FLAGS="${@:3}"
+EXAMPLE=$3
+TO=$2
+FROM=$1
+FLAGS="${@:4}"
+
+RUN="srun -E -c 31"
 
 set CUBLAS_WORKSPACE_CONFIG=":4096:8"
 
 TMP=`mktemp -d`
-for i in `seq 1 $RUNS`; do
-  ( bash onerun.sh $EXAMPLE $FLAGS --seed $i > $TMP/$i )&
+for i in `seq -w $FROM $TO`; do
+  ( $RUN python3 run.py $EXAMPLE $FLAGS --seed $i > $TMP/$i )&
 done
 wait || exit $?
-cat $TMP/*
+echo "all results:"
+for i in `seq -w $FROM $TO`; do
+  echo -n "$i: "
+  cat $TMP/$i | grep result
+done
+OK=`cat $TMP/* | grep "result" | grep "OK" | wc -l`
+ALL=`cat $TMP/* | grep "result" | wc -l`
+echo "final: $OK/$ALL"
 rm -r $TMP
