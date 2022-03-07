@@ -37,6 +37,7 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
         seed : Optional[int] = None, dropout : float = 0,
         validate : bool = True,
         validation_steps : Optional[int] = None,
+        validate_training : bool = True,
         input : Optional[str] = None, output : Optional[str] = None,
         **rules_args):
     if info:
@@ -63,7 +64,8 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
     problem = loader.load_problem(os.path.join(task, dirs[0]), invented_count=inv)
 
     train_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('train')]
-    val_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('val')]
+    val_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('val')] + 
+                        (train_worlds if validate_training else [])
 
     base_val = torcher.base_val(problem, worlds = train_worlds).to(dev)
     positive_targets = torcher.targets(train_worlds, positive = True).to(dev)
