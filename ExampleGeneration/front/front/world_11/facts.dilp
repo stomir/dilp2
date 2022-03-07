@@ -1,0 +1,12 @@
+tail(5,6).
+tail(6,8).
+tail(8,9).
+tail(10,12).
+tail(12,14).
+head(5,1).
+head(10,1).
+head(6,2).
+head(12,2).
+head(8,4).
+empty(9).
+empty(14).

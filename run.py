@@ -46,6 +46,7 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
         logging.getLogger().setLevel(logging.DEBUG)
 
     if seed is not None:
+        seed = int(seed)
         torch.use_deterministic_algorithms(True) #type: ignore
         numpy.random.seed(seed)
         random.seed(seed)
@@ -93,7 +94,7 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
         assert False
         
     entropy_enabled = normalize_threshold is None
-    entropy_weight = 0.0
+    entropy_weight = 0.0 if normalize_threshold is not None else 1.0
 
     for epoch in (tq := tqdm(range(0, int(epochs)))):
         opt.zero_grad()
@@ -113,6 +114,13 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
         else:
             target_loss = target_loss.mean()
         target_loss.backward()
+        
+        if normalize_gradients is not None:
+            with torch.no_grad():
+                for fuzzy in weights:
+                    #w /= w.sum(-1, keepdim=True) * w.sign()
+                    fuzzy[:] = torch.nn.functional.normalize(fuzzy, dim=-1)
+                    fuzzy *= normalize_gradients
             
         if normalize_threshold is not None and report_loss.item() < normalize_threshold:
             entropy_enabled = True
@@ -130,13 +138,6 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
         if clip is not None:
             torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
 
-        if normalize_gradients is not None:
-            with torch.no_grad():
-                for fuzzy in weights:
-                    #w /= w.sum(-1, keepdim=True) * w.sign()
-                    fuzzy[:] = torch.nn.functional.normalize(fuzzy, dim=-1)
-                    fuzzy *= normalize_gradients
-
         opt.step()
         #adjust_weights(weights)
 
@@ -150,8 +151,11 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
     dilp.print_program(rulebook, mask(weights, rulebook), torcher.rev_dict(problem.predicates))
     
     if validate:
+        last_target = report_loss.item()
+        last_entropy = entropy_loss.item()
         with torch.no_grad():
             total_loss = 0.0
+            total_fuzzy = 0.0
             dev = torch.device('cpu')
             rulebook = rulebook.to(dev)
             fuzzy = weights.detach().to(dev)
@@ -165,12 +169,14 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
                 crisp_loss, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=validation_steps)
                 report = torch.cat([target_values.unsqueeze(1), fuzzy_report.unsqueeze(1), crisp_report.unsqueeze(1)], dim=1).detach().cpu().numpy()
                 print(f'fuzzy_loss: {fuzzy_loss.mean().item():.5f} crisp_loss: {crisp_loss.mean().item():.5f}:\n', report)
-                total_loss += crisp_loss.sum().item()
+                total_loss += crisp_loss.mean().item()
+                total_fuzzy += fuzzy_loss.mean().item()
             
             if total_loss == 0.0:
                 print('result: OK')
             else:
-                print('result: FAIL')
+                print(f'result: FAIL {total_loss=} \
+                      {total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
     
     if output is not None:
         torch.save(weights.detach().cpu(), output)
