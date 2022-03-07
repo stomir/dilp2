@@ -48,7 +48,7 @@ def main(problem,name):
 			preds["positive"].add(ret)
 
 		current =os.path.abspath(os.getcwd())
-		example_loc = os.path.join(current, "../examples/", name)
+		example_loc = os.path.join(current, "../examples/")
 		if not os.path.exists(example_loc):
 			os.mkdir(example_loc)
 
