@@ -102,7 +102,7 @@ def rules(problem : Problem,
 
                             ret[head,clause,body_position,i] = torch.as_tensor([p, a * 3 + b])
                             i += 1
-                            logging.debug(f'rule [{rev_pred[head]}] :- {"_, " if body_position == 1 else ""} {rev_pred[p]}({a}, {b})  {", _" if body_position == 0 else ""}')
+                            logging.debug(f'rule {rev_pred[head]} [{clause}] :- {"_, " if body_position == 1 else ""} {rev_pred[p]}({a}, {b})  {", _" if body_position == 0 else ""}')
 
     cnt : int = int((ret >= 0).max(0)[0].max(0)[0].max(0)[0].max(1)[0].sum().item())
     bp = ret[:,:,:,:cnt,0].to(dev)

@@ -59,14 +59,19 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
     if  inv<0:
         raise DataError('The number of invented predicates must be >= 0')
 
+    try:
+        x = torch.zeros(size=(), device=dev).item()
+    except RuntimeError as e:
+        logging.error(f"device error {cuda=} {dev=}")
+        raise e
     
 
     dirs = [d for d in os.listdir(task) if os.path.isdir(os.path.join(task, d))]
     problem = loader.load_problem(os.path.join(task, dirs[0]), invented_count=inv)
 
     train_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('train')]
-    val_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('val')] + 
-                        (train_worlds if validate_training else [])
+    val_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('val')] \
+                        + (train_worlds if validate_training else [])
 
     base_val = torcher.base_val(problem, worlds = train_worlds).to(dev)
     positive_targets = torcher.targets(train_worlds, positive = True).to(dev)
@@ -81,6 +86,11 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
 
     weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=dev), std=init_rand)) \
         if init == 'normal' else torch.nn.Parameter(torch.rand([shape[0], 2, 2, shape[3]], device=dev) * init_rand)
+
+    if input is not None:
+        with torch.load(input) as w:
+            weights[:] = w.to(dev)
+            logging.info(f'loaded weights from {input}')
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
     print(f"done")
@@ -143,7 +153,7 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
 
         tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item(), entropy_weight=entropy_weight * norm_weight)
 
-        logging.info(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
+        logging.debug(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
 
         if end_early is not None and report_loss.item() < end_early:
             break
@@ -156,27 +166,33 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
         with torch.no_grad():
             total_loss = 0.0
             total_fuzzy = 0.0
+            valid_worlds = 0
+            fuzzily_valid_worlds = 0
             dev = torch.device('cpu')
             rulebook = rulebook.to(dev)
             fuzzy = weights.detach().to(dev)
             crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).float(), rulebook)
             if validation_steps is None:
                 validation_steps = steps * 2
-            for world in val_worlds:
+            for i, world in enumerate(val_worlds):
                 base_val = torcher.base_val(problem, [world])
                 targets, target_values = torcher.targets_tuple([world], device = dev)
                 fuzzy_loss, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = masked_softmax(fuzzy, rulebook.mask), targets=targets, target_values=target_values, steps=validation_steps)
                 crisp_loss, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=validation_steps)
+                fuzzy_acc = (fuzzy_report.round() == target_values).float().mean().item()
+                crisp_acc = (crisp_report == target_values).float().mean().item()
                 report = torch.cat([target_values.unsqueeze(1), fuzzy_report.unsqueeze(1), crisp_report.unsqueeze(1)], dim=1).detach().cpu().numpy()
-                print(f'fuzzy_loss: {fuzzy_loss.mean().item():.5f} crisp_loss: {crisp_loss.mean().item():.5f}:\n', report)
+                logging.info(f'world {i} {fuzzy_acc=} {crisp_acc=}\n{report}')
                 total_loss += crisp_loss.mean().item()
                 total_fuzzy += fuzzy_loss.mean().item()
+                if crisp_acc == 1.0:
+                    valid_worlds += 1
+                if fuzzy_acc == 1.0:
+                    fuzzily_valid_worlds += 1
             
-            if total_loss == 0.0:
-                print('result: OK')
-            else:
-                print(f'result: FAIL {total_loss=} \
-                      {total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
+            result = 'OK' if valid_worlds == len(val_worlds) else 'FAIL'
+            print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} {total_loss=} ' +
+                      f'{total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
     
     if output is not None:
         torch.save(weights.detach().cpu(), output)

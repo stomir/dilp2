@@ -1,7 +1,7 @@
 #!/bin/bash
 
 POSITIONAL_ARGS=()
-SRUN="srun -E -c 1 --gpus-per-node=1 -p IFIall"
+SRUN="srun -E -c 31"
 FROM="1"
 
 while [[ $# -gt 0 ]]; do

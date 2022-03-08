@@ -58,6 +58,7 @@ bash batchrun.sh examples/fizz/ 20 --inv 30 --steps 20 --epochs 1000 --cuda True
 | no entropy, longer, repeated | `examples/fizz/ --inv 30 --steps 20 --epochs 2000 --cuda True --batch_size 3 --norm_weight 0 --end_early 1e-4` | `12/20` |
 | | `1 20 examples/fizz/ --inv 30 --steps 20 --epochs 4000 --cuda True --batch_size 3 --normalize_threshold 1e-1 --norm_weight 1e-4 --normalize_gradients 1e2 --end_early 1e-4` | `16/20` |
 | long no entropy | `1 20 examples/fizz/ --inv 30 --steps 20 --epochs 4000 --cuda True --batch_size 3 --norm_weight 0 --end_early 1e-4` | `13/20` |
+| | `110 119 examples/fizz/ --inv 30 --steps 20 --epochs 4000 --batch_size 3 --normalize_threshold 1e-1 --norm_weight 1e-2 --normalize_gradients 1e2 --end_early 1e-4` | `17/20` |
 
 inverted at the start?
 
