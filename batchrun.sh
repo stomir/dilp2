@@ -3,6 +3,8 @@
 POSITIONAL_ARGS=()
 SRUN="srun -E -c 1 --gpus-per-node=1 -p IFIall"
 FROM="1"
+KEEP=""
+TMP=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -13,6 +15,17 @@ while [[ $# -gt 0 ]]; do
       ;;
     -s|--srun)
       SRUN="srun $2"
+      shift
+      shift
+      ;;
+    -k|--keep)
+      KEEP="yes"
+      shift
+      ;;
+    -od|--outdir)
+      TMP="$2"
+      KEEP="yes"
+      mkdir -p $TMP
       shift
       shift
       ;;
@@ -41,7 +54,9 @@ echo "FLAGS: $FLAGS"
 
 set CUBLAS_WORKSPACE_CONFIG=":4096:8"
 
-TMP=`mktemp -d`
+if [ -z "$TMP" ]; then
+  TMP=`mktemp -d`
+fi
 for i in `seq -w $FROM $TO`; do
   ( $SRUN python3 run.py $EXAMPLE $FLAGS --seed $i > $TMP/$i )&
 done
@@ -54,4 +69,8 @@ done
 OK=`cat $TMP/* | grep "result" | grep "OK" | wc -l`
 ALL=`cat $TMP/* | grep "result" | wc -l`
 echo "final: $OK/$ALL"
-rm -r $TMP
+if [ -n "$KEEP" ]; then
+  >&2 echo "all results in $TMP"
+else 
+  rm -r $TMP
+fi
