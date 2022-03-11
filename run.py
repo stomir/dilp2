@@ -23,7 +23,8 @@ def masked_softmax(t : torch.Tensor, mask : torch.Tensor) -> torch.Tensor:
     t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device)) #type: ignore
     return t
 
-def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[int,bool]] = None, inv : int = 0,
+def main(task : str, epochs : int = 100, steps : int = 1, 
+        cuda : Union[int,bool] = False, inv : int = 0,
         debug : bool = False, norm : str = 'mixed', norm_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
         init_rand : float = 10,
@@ -190,7 +191,7 @@ def main(task : str, epochs : int = 100, steps : int = 1, cuda : Optional[Union[
                 if fuzzy_acc == 1.0:
                     fuzzily_valid_worlds += 1
             
-            result = 'OK' if valid_worlds == len(val_worlds) else 'FAIL'
+            result = ' OK ' if valid_worlds == len(val_worlds) else 'FAIL'
             print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} {total_loss=} ' +
                       f'{total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
     

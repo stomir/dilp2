@@ -58,7 +58,7 @@ if [ -z "$TMP" ]; then
   TMP=`mktemp -d`
 fi
 for i in `seq -w $FROM $TO`; do
-  ( $SRUN python3 run.py $EXAMPLE $FLAGS --seed $i > $TMP/$i )&
+  ( $SRUN -E -J dilp/$EXAMPLE/$i/`basename $TMP` python3 run.py $EXAMPLE $FLAGS --seed $i > $TMP/$i )&
 done
 wait || exit $?
 echo "all results:"
@@ -68,7 +68,9 @@ for i in `seq -w $FROM $TO`; do
 done
 OK=`cat $TMP/* | grep "result" | grep "OK" | wc -l`
 ALL=`cat $TMP/* | grep "result" | wc -l`
+FUZZY=`cat $TMP/* | grep "result" | grep -v fuzzily_valid_worlds=0 | wc -l`
 echo "final: $OK/$ALL"
+echo "fuzzily correct: $FUZZY/$ALL"
 if [ -n "$KEEP" ]; then
   >&2 echo "all results in $TMP"
 else 

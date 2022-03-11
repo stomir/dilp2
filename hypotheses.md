@@ -60,6 +60,14 @@ bash batchrun.sh examples/fizz/ 20 --inv 30 --steps 20 --epochs 1000 --cuda True
 | long no entropy | `1 20 examples/fizz/ --inv 30 --steps 20 --epochs 4000 --cuda True --batch_size 3 --norm_weight 0 --end_early 1e-4` | `13/20` |
 | | `110 119 examples/fizz/ --inv 30 --steps 20 --epochs 4000 --batch_size 3 --normalize_threshold 1e-1 --norm_weight 1e-2 --normalize_gradients 1e2 --end_early 1e-4` | `17/20` |
 
+
+| Description | Run | Result | Fuzzy result |
+|-------------|-----|--------|--------------|
+| no entropy | `examples/fizz/ --inv 30 --steps 20 --epochs 4000 --batch_size 3 --normalize_threshold None --norm_weight 0 --end_early 1e-4` | `14/20` | `18/20` |
+| entropy `1e-2` enabled at target loss `0.1`, gradients normalized to `100` | `examples/fizz/ --inv 30 --steps 20 --epochs 4000 --batch_size 3 --normalize_threshold 1e-1 --norm_weight 1e-2 --normalize_gradients 1e2 --end_early 1e-4` | `13/20` | `17/20` |
+
+
+
 inverted at the start?
 
 ## Entropy loss where there is gradient?
