@@ -39,6 +39,7 @@ def main(task : str, epochs : int = 100, steps : int = 1,
         validate : bool = True,
         validation_steps : Optional[int] = None,
         validate_training : bool = True,
+        devices : Optional[List[int]] = None,
         input : Optional[str] = None, output : Optional[str] = None,
         **rules_args):
     if info:
@@ -56,6 +57,11 @@ def main(task : str, epochs : int = 100, steps : int = 1,
 
     dilp.set_norm(norm)
     dev = torch.device(cuda if type(cuda) == int else 0) if cuda is not None else torch.device('cpu')
+
+    if devices is None:
+        devs : Optional[List[torch.device]] = None
+    else:
+        devs = [torch.device(i) for i in devices]
 
     if  inv<0:
         raise DataError('The number of invented predicates must be >= 0')
@@ -114,7 +120,9 @@ def main(task : str, epochs : int = 100, steps : int = 1,
             moved : torch.Tensor = weights.softmax(-1) * (1-dropout) * torch.rand(weights.shape, device=weights.device)
         else:
             moved = masked_softmax(weights, rulebook.mask)
-        target_loss, _ = dilp.loss(base_val, rulebook=rulebook, weights = moved, targets=targets, target_values=target_values, steps=steps)
+        target_loss, _ = dilp.loss(base_val, rulebook=rulebook, 
+                weights = moved, targets=targets, target_values=target_values,
+                steps=steps, devices=devs)
         report_loss = target_loss.mean()
         if batch_size is not None:
             assert batch_size <= len(positive_targets) and batch_size <= len(negative_targets)

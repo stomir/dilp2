@@ -13,7 +13,7 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
-    -s|--srun)
+    -s|--slurm)
       SRUN="srun $2"
       shift
       shift
