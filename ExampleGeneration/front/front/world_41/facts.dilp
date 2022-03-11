@@ -1,8 +1,7 @@
-tail(5,8).
-tail(8,9).
-tail(10,14).
 head(5,1).
 head(10,1).
 head(8,2).
-empty(9).
-empty(14).
+empty(14,14).
+tail(8,14).
+tail(10,14).
+tail(5,8).

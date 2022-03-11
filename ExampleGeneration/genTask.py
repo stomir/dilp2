@@ -5,7 +5,7 @@ import os
 import random
 
 #To run for front of a list use the following command:
-#   python genTask.py list.lp front '{"ele":4,"li":4,"nli":1}' front '["head","tail","empty"]'--models 0
+#   python genTask.py front/list.lp front '{"ele":4,"li":4,"nli":1}' front '["head","tail","empty"]'--models 0
 #To run for grandparent of a list use the following command:
 #   python genTask.py ancestor.lp grandparent '{"generations":2,"members":5}' grandparent '["parent"]'--models 0
 
