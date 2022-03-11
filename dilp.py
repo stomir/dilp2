@@ -1,6 +1,7 @@
 from sys import exec_prefix
 import torch
 import logging
+import math
 from typing import *
 
 from zmq import device
@@ -120,6 +121,35 @@ def infer_single_step(ex_val : torch.Tensor,
     logging.debug(f"returning {ex_val.shape=}")
     return ex_val
 
+def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
+        return_dev : torch.device, devices : Sequence[torch.device],
+        body_predicates : torch.Tensor, variable_choices : torch.Tensor,
+        rule_weights : torch.Tensor):
+    pred_count : int = body_predicates.shape[0]
+    per_dev = math.ceil(pred_count / len(devices))
+    
+    body_predicates_ : List[torch.Tensor] = []
+    variable_choices_ : List[torch.Tensor] = []
+    rule_weights_ : List[torch.Tensor] = []
+    for i, dev in enumerate(devices):
+        body_predicates_.append(body_predicates[i*per_dev:(i+1)*per_dev].to(dev))
+        variable_choices_.append(variable_choices[i*per_dev:(i+1)*per_dev].to(dev))
+        rule_weights_.append(rule_weights[i*per_dev:(i+1)*per_dev].to(dev))
+
+    val = base_val
+    for step in range(steps):
+        rets = []
+        for i, dev in enumerate(devices):
+            rets.append(infer_single_step(
+                ex_val = extend_val(val.to(dev)), 
+                body_predicates = body_predicates_[i],
+                variable_choices = variable_choices_[i],
+                rule_weights = rule_weights_[i]))
+        val = disjunction2(val, torch.cat([t.to(return_dev) for t in rets], dim=1))
+    return val
+
+
+
 def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, vars : int = 3) -> torch.Tensor:
     val = base_val
     vals : List[torch.Tensor] = []
@@ -135,9 +165,14 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
         
 def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
         targets : torch.Tensor,
-        target_values : torch.Tensor,
-        steps : int = 2, vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
-    val = infer_steps(steps, base_val, rulebook, weights, vars)
+        target_values : torch.Tensor, steps : int, 
+        devices : Optional[Sequence[torch.device]] = None,
+        vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
+    if devices is None:
+        val = infer_steps(steps, base_val, rulebook, weights, vars)
+    else:
+        val = infer_steps_on_devs(steps, base_val, devices[-1], devices,
+            rulebook.body_predicates, rulebook.variable_choices, weights)
     preds = val[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]
     #return (preds - target_values).square(), preds
     return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
