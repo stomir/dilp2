@@ -14,6 +14,8 @@ import random
 import os
 import loader
 import torcher
+import sys
+from torch.utils.tensorboard import SummaryWriter
 
 def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
     return t.where(rulebook.mask, torch.zeros(size=(),device=t.device))
@@ -25,11 +27,12 @@ def masked_softmax(t : torch.Tensor, mask : torch.Tensor) -> torch.Tensor:
 
 def main(task : str, epochs : int = 100, steps : int = 1, 
         cuda : Union[int,bool] = False, inv : int = 0,
-        debug : bool = False, norm : str = 'mixed', norm_weight : float = 1.0,
+        debug : bool = False, norm : str = 'mixed',
+        entropy_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
         init_rand : float = 10,
         info : bool = False,
-        normalize_threshold : Optional[float] = 1e-2,
+        entropy_enable_threshold : Optional[float] = 1e-2,
         batch_size : Optional[int] = None,
         normalize_gradients : Optional[float] = None,
         init : str = 'uniform',
@@ -40,7 +43,9 @@ def main(task : str, epochs : int = 100, steps : int = 1,
         validation_steps : Optional[int] = None,
         validate_training : bool = True,
         devices : Optional[List[int]] = None,
+        entropy_gradient_ratio : Optional[float] = None,
         input : Optional[str] = None, output : Optional[str] = None,
+        tensorboard : Optional[str] = None,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -57,6 +62,11 @@ def main(task : str, epochs : int = 100, steps : int = 1,
 
     dilp.set_norm(norm)
     dev = torch.device(cuda if type(cuda) == int else 0) if cuda is not None else torch.device('cpu')
+
+    if tensorboard is not None:
+        tb : Optional[SummaryWriter] = SummaryWriter(log_dir=tensorboard, comment=' '.join(sys.argv))
+    else:
+        tb = None
 
     if devices is None:
         devs : Optional[List[torch.device]] = None
@@ -110,8 +120,8 @@ def main(task : str, epochs : int = 100, steps : int = 1,
     else:
         assert False
         
-    entropy_enabled = normalize_threshold is None
-    entropy_weight = 0.0 if normalize_threshold is not None else 1.0
+    entropy_enabled = entropy_enable_threshold is None
+    entropy_weight_in_use = 0.0 if entropy_enable_threshold is not None else 1.0
 
     for epoch in (tq := tqdm(range(0, int(epochs)))):
         opt.zero_grad()
@@ -141,18 +151,20 @@ def main(task : str, epochs : int = 100, steps : int = 1,
                     fuzzy[:] = torch.nn.functional.normalize(fuzzy, dim=-1)
                     fuzzy *= normalize_gradients
             
-        if normalize_threshold is not None and report_loss.item() < normalize_threshold:
+        if entropy_enable_threshold is not None and report_loss.item() < entropy_enable_threshold:
             entropy_enabled = True
-            
+        
+        entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
+        entropy_loss = mask(entropy_loss, rulebook)
+        actual_entropy = entropy_loss.mean()
         if entropy_enabled:
-            entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
-            entropy_loss = mask(entropy_loss, rulebook).mean()
-            if entropy_weight < 1.0 and normalize_threshold is not None and report_loss.item() < normalize_threshold:
-                entropy_weight += entropy_weight_step
-            entropy_loss *= entropy_weight * norm_weight
+            if entropy_gradient_ratio is not None:
+                entropy_loss = entropy_loss * entropy_gradient_ratio * weights.norm(p=2, dim=-1, keepdim=True)
+            entropy_loss = entropy_loss.mean()
+            if entropy_weight_in_use < 1.0 and entropy_enable_threshold is not None and report_loss.item() < entropy_enable_threshold:
+                entropy_weight_in_use += entropy_weight_step
+            entropy_loss *= entropy_weight_in_use * entropy_weight
             entropy_loss.backward()
-        else:
-            entropy_loss = torch.as_tensor(0.0)
 
         if clip is not None:
             torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
@@ -160,7 +172,12 @@ def main(task : str, epochs : int = 100, steps : int = 1,
         opt.step()
         #adjust_weights(weights)
 
-        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item(), entropy_weight=entropy_weight * norm_weight)
+        tq.set_postfix(target_loss = report_loss.item(), entropy = actual_entropy.item(), batch_loss = target_loss.item(), entropy_weight=entropy_weight_in_use * entropy_weight)
+        if tb is not None:
+            tb.add_scalars("train", 
+                {'target_loss' : report_loss.item(), 'entropy' : actual_entropy.item(), 'batch_loss' : target_loss.item(), 
+                'entropy_weight' : entropy_weight_in_use * entropy_weight},
+                global_step=epoch)
 
         logging.debug(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
 
