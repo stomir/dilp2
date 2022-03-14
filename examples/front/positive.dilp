@@ -1,5 +1,0 @@
-front(llbc,llb).
-front(llc,llempty).
-front(llab,lla).
-front(llabc,llab).
-front(llac,lla).
