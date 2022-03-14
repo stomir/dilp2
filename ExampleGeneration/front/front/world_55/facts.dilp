@@ -1,6 +1,6 @@
-head(5,2).
-head(10,2).
-head(8,4).
+head(5,1).
+head(10,1).
+head(8,3).
 empty(14,14).
 tail(8,14).
 tail(10,14).

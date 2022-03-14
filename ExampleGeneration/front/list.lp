@@ -65,7 +65,11 @@ tail(X,Z) :- tail1(X,Y), emp(_,Y), empty(Z,Z).
 
 %Negative examples
 
-antifront(X,Y):- not front(X,Y), list(0,X),list(1,Y).
+antifront(X,Y):- not front(X,Y), head(X,_), head(Y,_).
+
+antifront(X,Y):- not front(X,Y), empty(X,_), head(Y,_).
+
+antifront(X,Y):- not front(X,Y), head(X,_), empty(Y,_).
 
 #show tail/2.
 #show head/2.
