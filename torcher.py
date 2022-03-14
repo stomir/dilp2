@@ -1,10 +1,47 @@
 from numpy import positive
 import torch
-from loader import Problem, World, rev_dict
+from loader import Problem, World, rev_dict, TargetType
 from typing import *
 from dilp import Rulebook
 import logging
 import itertools
+
+class TargetSet(NamedTuple):
+    value : float
+    idxs : torch.Tensor
+
+    def to(self, device : torch.device) -> 'TargetSet':
+        return TargetSet(
+            value = self.value,
+            idxs = self.idxs.to(device)
+        )
+
+    def __len__(self) -> int:
+        return len(self.idxs)
+
+class WorldsBatch(NamedTuple):
+    base_val : torch.Tensor
+    positive_targets : TargetSet
+    negative_targets : TargetSet
+
+    def targets(self, target_type : TargetType):
+        if target_type == TargetType.POSITIVE:
+            return self.positive_targets
+        else:
+            return self.negative_targets
+    
+    def to(self, device : torch.device) -> 'WorldsBatch':
+        return WorldsBatch(
+            base_val = self.base_val.to(device),
+            positive_targets = self.positive_targets.to(device),
+            negative_targets = self.negative_targets.to(device)
+        )
+
+T = TypeVar('T')
+
+def chunks(n : int, seq : Sequence[T]) -> Iterable[Sequence[T]]:
+    for i in range(0, len(seq), n):
+        yield seq[i:i+n]
 
 def base_val(problem : Problem, worlds : Sequence[World]) -> torch.Tensor:
     atom_count = max(len(w.atoms) for w in worlds)
@@ -14,24 +51,29 @@ def base_val(problem : Problem, worlds : Sequence[World]) -> torch.Tensor:
             ret[i][fact] = 1.0
     return ret
 
-def targets_iter(worlds : Sequence[World], positive : bool) -> Iterable[Sequence[int]]:
+def targets_iter(worlds : Sequence[World], target_type : TargetType) -> Iterable[Sequence[int]]:
     for i, world in enumerate(worlds):
-        targets = world.positive if positive else world.negative
+        targets = world.positive if target_type == TargetType.POSITIVE else world.negative
         for target in targets:
             yield [i] + list(target)
 
-def targets(worlds : Sequence[World], positive : bool) -> torch.Tensor:
-    return torch.as_tensor(list(targets_iter(worlds, positive)), dtype=torch.long)
+def targets(worlds : Sequence[World], target_type : TargetType) -> torch.Tensor:
+    return torch.as_tensor(list(targets_iter(worlds, target_type)), dtype=torch.long)
 
-def targets_tuple(worlds : Sequence[World], device : torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
-    positive_targets = targets(worlds, positive = True)
-    negative_targets = targets(worlds, positive = False)
-    all_targets = torch.cat([positive_targets, negative_targets])
-    target_values = torch.cat([
-        torch.ones(len(positive_targets), device=device),
-        torch.zeros(len(negative_targets), device=device)
-    ])
-    return all_targets, target_values
+def targets_batch(problem : Problem, worlds : Sequence[World], device : torch.device) -> WorldsBatch:
+    positive_targets = targets(worlds, TargetType.POSITIVE)
+    negative_targets = targets(worlds, TargetType.NEGATIVE)
+    return WorldsBatch(
+        base_val = base_val(problem, worlds).to(device),
+        positive_targets = TargetSet(
+            value = 1.0,
+            idxs = positive_targets.to(device)
+        ),
+        negative_targets = TargetSet(
+            value = 0.0,
+            idxs = negative_targets.to(device)
+        )
+    )
 
 def merge_pad(ts : List[torch.Tensor], dim : int = 0, newdim : int = 0) -> torch.Tensor:
     max_len = max(len(t) for t in ts)
@@ -64,8 +106,6 @@ def rules(problem : Problem,
         layer_dict : Dict[int, int] = dict()
     else:
         layer_dict = dict(zip(problem.invented, sum(([i for _ in range(layer)] for i, layer in enumerate(layers)), start=[])))
-
-    print(f"{len(problem.invented)=} {layer_dict=}")
 
     pred_dim = len(problem.predicates)
 

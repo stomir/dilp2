@@ -2,6 +2,7 @@ from sys import exec_prefix
 import torch
 import logging
 import math
+import loader
 from typing import *
 
 from zmq import device
@@ -162,8 +163,29 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
         val = disjunction2(val, val2)
     return disjunction_dim(torch.cat(vals), 0)
     return val
-        
-def loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
+
+def infer(base_val : torch.Tensor,
+            rulebook : Rulebook,
+            weights : torch.Tensor,
+            steps : int,
+            devices : Optional[Sequence[torch.device]] = None,
+            ) -> torch.Tensor:
+    if devices is None:
+        return infer_steps(steps, base_val, rulebook, weights, 3)
+    else:
+        return infer_steps_on_devs(steps, base_val, devices[-1], devices,
+            rulebook.body_predicates, rulebook.variable_choices, weights)
+
+def loss(values : torch.Tensor, target_type : loader.TargetType) -> torch.Tensor:
+    if target_type == loader.TargetType.POSITIVE:
+        return -(values + 1e-10).log().mean()
+    else:
+        return -(1-values + 1e-10).log().mean()
+
+def extract_targets(vals : torch.Tensor, targets : torch.Tensor) -> torch.Tensor:
+    return vals[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]
+
+def legacy_loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
         targets : torch.Tensor,
         target_values : torch.Tensor, steps : int, 
         devices : Optional[Sequence[torch.device]] = None,

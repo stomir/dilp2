@@ -2,6 +2,7 @@ import pyparsing as pp #type: ignore
 from typing import *
 import os.path
 import logging
+from enum import IntEnum
 
 # relationship will refer to 'track' in all of your examples
 relationship = pp.Word(pp.alphas).setResultsName('relationship', listAllMatches=True)
@@ -26,6 +27,10 @@ sentence = fact + pp.Suppress('.')
 # self explanatory
 prolog_sentences = pp.OneOrMore(sentence)
 
+class TargetType(IntEnum):
+    POSITIVE = 1
+    NEGATIVE = 0
+
 class Problem(NamedTuple):
     predicates : Dict[str, int]
     bk : Set[int]
@@ -44,6 +49,7 @@ def rev_dict(d : Dict[A, B]) -> Dict[B, A]:
     return dict((v, k) for k, v in d.items())
 
 def load_facts(filename : str) -> Iterable[Tuple[str,str,str]]:
+    logging.debug(f'loading facts from {filename}')
     with open(filename) as f:
         data = prolog_sentences.parseString(f.read().replace('\n', ' '))
     for idx in range(len(data['facts'])):
@@ -84,6 +90,7 @@ def load_problem(dir : str, invented_count : int) -> Problem:
     )
     
 def load_world(dir : str, problem : Problem) -> World:
+    logging.debug(f'loading world from {dir}')
     facts = list(load_facts(os.path.join(dir, 'facts.dilp')))
     atoms_set : Set[str] = set.union(*(set(f[1:]) for f in facts))
     logging.debug(f'{dir=} {atoms_set=} {facts=}')

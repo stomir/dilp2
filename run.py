@@ -14,6 +14,8 @@ import random
 import os
 import loader
 import torcher
+import sys
+from torch.utils.tensorboard import SummaryWriter
 
 def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
     return t.where(rulebook.mask, torch.zeros(size=(),device=t.device))
@@ -23,24 +25,41 @@ def masked_softmax(t : torch.Tensor, mask : torch.Tensor) -> torch.Tensor:
     t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device)) #type: ignore
     return t
 
-def main(task : str, epochs : int = 100, steps : int = 1, 
+def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) -> torch.Tensor:
+    target_values = torch.cat([
+        torch.ones(len(batch.positive_targets)),
+        torch.zeros(len(batch.negative_targets))]).unsqueeze(1)
+    
+    idxs = torch.cat([batch.positive_targets.idxs, batch.negative_targets.idxs])
+    other_values = [dilp.extract_targets(val, idxs).unsqueeze(1) for val in vals]
+
+    return torch.cat([target_values] + other_values, dim=1)
+    
+
+def main(task : str, 
+        epochs : int, steps : int, 
+        batch_size : int,
         cuda : Union[int,bool] = False, inv : int = 0,
-        debug : bool = False, norm : str = 'mixed', norm_weight : float = 1.0,
+        debug : bool = False, norm : str = 'mixed',
+        entropy_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
         init_rand : float = 10,
         info : bool = False,
-        normalize_threshold : Optional[float] = 1e-2,
-        batch_size : Optional[int] = None,
+        entropy_enable_threshold : Optional[float] = 1e-2,
         normalize_gradients : Optional[float] = None,
         init : str = 'uniform',
         entropy_weight_step = 1,
         end_early : Optional[float] = 1e-3,
-        seed : Optional[int] = None, dropout : float = 0,
+        seed : Optional[int] = None,
         validate : bool = True,
         validation_steps : Optional[int] = None,
         validate_training : bool = True,
+        worlds_batch_size : int = 1,
         devices : Optional[List[int]] = None,
+        entropy_gradient_ratio : Optional[float] = None,
+        cut_down_rules : Union[int,float,None] = None,
         input : Optional[str] = None, output : Optional[str] = None,
+        tensorboard : Optional[str] = None,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -56,7 +75,14 @@ def main(task : str, epochs : int = 100, steps : int = 1,
         torch.cuda.manual_seed(seed) #type: ignore
 
     dilp.set_norm(norm)
-    dev = torch.device(cuda if type(cuda) == int else 0) if cuda is not None else torch.device('cpu')
+    dev = torch.device(cuda if type(cuda) == int else 0) if cuda != False else torch.device('cpu')
+
+    logging.info(f'{dev=}')
+
+    if tensorboard is not None:
+        tb : Optional[SummaryWriter] = SummaryWriter(log_dir=tensorboard, comment=' '.join(sys.argv))
+    else:
+        tb = None
 
     if devices is None:
         devs : Optional[List[torch.device]] = None
@@ -74,16 +100,15 @@ def main(task : str, epochs : int = 100, steps : int = 1,
     
 
     dirs = [d for d in os.listdir(task) if os.path.isdir(os.path.join(task, d))]
+    logging.info(f'{dirs=}')
     problem = loader.load_problem(os.path.join(task, dirs[0]), invented_count=inv)
 
     train_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('train')]
     val_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('val')] \
                         + (train_worlds if validate_training else [])
 
-    base_val = torcher.base_val(problem, worlds = train_worlds).to(dev)
-    positive_targets = torcher.targets(train_worlds, positive = True).to(dev)
-    negative_targets = torcher.targets(train_worlds, positive = False).to(dev)
-    targets, target_values = torcher.targets_tuple(train_worlds, device = dev)
+    worlds_batches : Sequence[torcher.WorldsBatch] = [torcher.targets_batch(problem, worlds, dev) for worlds in torcher.chunks(worlds_batch_size, train_worlds)]
+    choices : Sequence[numpy.ndarray] = [numpy.concatenate([numpy.repeat(i, len(batch.targets(target_type).idxs)) for i, batch in enumerate(worlds_batches)]) for target_type in loader.TargetType]
 
     #This should not be used. Instead one of the dictionaries should be used.
     #pred_names = list(pred_dict_rev.keys())
@@ -100,7 +125,6 @@ def main(task : str, epochs : int = 100, steps : int = 1,
             logging.info(f'loaded weights from {input}')
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
-    print(f"done")
     if optim == 'rmsprop':
         opt : torch.optim.Optimizer = torch.optim.RMSprop([weights], lr=lr)
     elif optim == 'adam':
@@ -110,29 +134,49 @@ def main(task : str, epochs : int = 100, steps : int = 1,
     else:
         assert False
         
-    entropy_enabled = normalize_threshold is None
-    entropy_weight = 0.0 if normalize_threshold is not None else 1.0
+    entropy_enabled = entropy_enable_threshold is None
+    entropy_weight_in_use = 0.0 if entropy_enable_threshold is not None else 1.0
 
     for epoch in (tq := tqdm(range(0, int(epochs)))):
         opt.zero_grad()
 
-        if dropout != 0:
-            moved : torch.Tensor = weights.softmax(-1) * (1-dropout) * torch.rand(weights.shape, device=weights.device)
-        else:
-            moved = masked_softmax(weights, rulebook.mask)
-        target_loss, _ = dilp.loss(base_val, rulebook=rulebook, 
-                weights = moved, targets=targets, target_values=target_values,
-                steps=steps, devices=devs)
-        report_loss = target_loss.mean()
-        if batch_size is not None:
-            assert batch_size <= len(positive_targets) and batch_size <= len(negative_targets)
-            chosen_positive = torch.randperm(len(positive_targets), device=dev) >= len(positive_targets) - batch_size
-            chosen_negative = torch.randperm(len(negative_targets), device=dev) >= len(negative_targets) - batch_size
-            chosen = torch.cat((chosen_positive, chosen_negative))
-            target_loss = target_loss.where(chosen, torch.as_tensor(0.0, device=dev)).sum() / chosen.sum()
-        else:
-            target_loss = target_loss.mean()
-        target_loss.backward()
+        chosen_worlds_batches = [numpy.random.choice(choices_of_type, replace=False, size=batch_size) for choices_of_type in choices]
+
+        loss_sum = 0.0
+
+        for i, batch in enumerate(worlds_batches):
+            ws = masked_softmax(weights, rulebook.mask)
+            num_to_use_in_this_batch : Sequence[int] = [(chosen_worlds_batches_of_type == i).sum() for chosen_worlds_batches_of_type in chosen_worlds_batches]
+
+            if sum(num_to_use_in_this_batch) == 0:
+                logging.debug(f'skipped worlds batch {i} as nothing was chosen')
+                continue
+
+            logging.debug(f'{len(batch.targets(loader.TargetType.POSITIVE))=} {len(batch.targets(loader.TargetType.NEGATIVE))=} {num_to_use_in_this_batch=}')
+
+            to_use_in_this_batch : Sequence[numpy.ndarray] = [numpy.random.choice(numpy.arange(len(batch.targets(target_type))), replace=False, size=to_choose)
+                        for target_type, to_choose in zip(loader.TargetType, num_to_use_in_this_batch)]
+
+            logging.debug(f'{ws[0].device=} {batch.base_val.device=}')
+            vals = dilp.infer(base_val = batch.base_val, rulebook = rulebook, 
+                    weights = ws, steps=steps, devices = devs)
+
+            ls = torch.as_tensor(0.0, device=dev)
+            for target_type, to_use_in_this_batch_of_type in zip(loader.TargetType, to_use_in_this_batch):
+                if len(to_use_in_this_batch_of_type) == 0:
+                    continue
+                targets = batch.targets(target_type).idxs[torch.from_numpy(to_use_in_this_batch_of_type).to(dev)]
+                preds = dilp.extract_targets(vals, targets)
+                loss = dilp.loss(preds, target_type)
+                loss = loss * len(to_use_in_this_batch_of_type) / batch_size / 2
+
+                ls = ls + loss
+
+            ls.backward()
+            loss_sum += ls.item()
+
+            del loss, vals, targets, preds, ls
+            torch.cuda.empty_cache()
         
         if normalize_gradients is not None:
             with torch.no_grad():
@@ -141,18 +185,20 @@ def main(task : str, epochs : int = 100, steps : int = 1,
                     fuzzy[:] = torch.nn.functional.normalize(fuzzy, dim=-1)
                     fuzzy *= normalize_gradients
             
-        if normalize_threshold is not None and report_loss.item() < normalize_threshold:
+        if entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
             entropy_enabled = True
-            
+        
+        entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
+        entropy_loss = mask(entropy_loss, rulebook)
+        actual_entropy = entropy_loss.mean()
         if entropy_enabled:
-            entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
-            entropy_loss = mask(entropy_loss, rulebook).mean()
-            if entropy_weight < 1.0 and normalize_threshold is not None and report_loss.item() < normalize_threshold:
-                entropy_weight += entropy_weight_step
-            entropy_loss *= entropy_weight * norm_weight
+            if entropy_gradient_ratio is not None:
+                entropy_loss = entropy_loss * entropy_gradient_ratio * weights.norm(p=2, dim=-1, keepdim=True)
+            entropy_loss = entropy_loss.mean()
+            if entropy_weight_in_use < 1.0 and entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
+                entropy_weight_in_use += entropy_weight_step
+            entropy_loss *= entropy_weight_in_use * entropy_weight
             entropy_loss.backward()
-        else:
-            entropy_loss = torch.as_tensor(0.0)
 
         if clip is not None:
             torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
@@ -160,18 +206,21 @@ def main(task : str, epochs : int = 100, steps : int = 1,
         opt.step()
         #adjust_weights(weights)
 
-        tq.set_postfix(target_loss = report_loss.item(), entropy_loss = entropy_loss.item(), batch_loss = target_loss.item(), entropy_weight=entropy_weight * norm_weight)
+        tq.set_postfix(entropy = actual_entropy.item(), batch_loss = loss_sum, entropy_weight=entropy_weight_in_use * entropy_weight)
+        if tb is not None:
+            tb.add_scalars("train", 
+                {'entropy' : actual_entropy.item(), 'batch_loss' : loss_sum, 
+                'entropy_weight' : entropy_weight_in_use * entropy_weight},
+                global_step=epoch)
 
-        logging.debug(f"target loss: {report_loss.item()} entropy loss: {entropy_loss.item()}")
-
-        if end_early is not None and report_loss.item() < end_early:
+        if end_early is not None and loss_sum < end_early:
             break
 
     dilp.print_program(rulebook, mask(weights, rulebook), torcher.rev_dict(problem.predicates))
     
     if validate:
-        last_target = report_loss.item()
-        last_entropy = entropy_loss.item()
+        last_target = loss_sum
+        last_entropy = actual_entropy.item()
         with torch.no_grad():
             total_loss = 0.0
             total_fuzzy = 0.0
@@ -185,15 +234,22 @@ def main(task : str, epochs : int = 100, steps : int = 1,
                 validation_steps = steps * 2
             for i, world in enumerate(val_worlds):
                 base_val = torcher.base_val(problem, [world])
-                targets, target_values = torcher.targets_tuple([world], device = dev)
-                fuzzy_loss, fuzzy_report = dilp.loss(base_val, rulebook=rulebook, weights = masked_softmax(fuzzy, rulebook.mask), targets=targets, target_values=target_values, steps=validation_steps)
-                crisp_loss, crisp_report = dilp.loss(base_val, rulebook=rulebook, weights = crisp, targets=targets, target_values=target_values, steps=validation_steps)
+                batch = torcher.targets_batch(problem, [world], dev)
+                fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy, rulebook.mask), steps=validation_steps)
+                fuzzy_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(fuzzy_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
+
+                crisp_vals = dilp.infer(base_val, rulebook, weights = crisp, steps=validation_steps)
+                crisp_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(crisp_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
+
+                report = report_tensor([fuzzy_vals, crisp_vals], batch)
+                fuzzy_report = report[:,1]
+                crisp_report = report[:,2]
+                target_values = report[:,0]
                 fuzzy_acc = (fuzzy_report.round() == target_values).float().mean().item()
                 crisp_acc = (crisp_report == target_values).float().mean().item()
-                report = torch.cat([target_values.unsqueeze(1), fuzzy_report.unsqueeze(1), crisp_report.unsqueeze(1)], dim=1).detach().cpu().numpy()
-                logging.info(f'world {i} {fuzzy_acc=} {crisp_acc=}\n{report}')
-                total_loss += crisp_loss.mean().item()
-                total_fuzzy += fuzzy_loss.mean().item()
+                logging.info(f'world {i} {fuzzy_acc=} {crisp_acc=}\n{report.numpy()}')
+                total_loss += crisp_loss.item()
+                total_fuzzy += fuzzy_loss.item()
                 if crisp_acc == 1.0:
                     valid_worlds += 1
                 if fuzzy_acc == 1.0:
