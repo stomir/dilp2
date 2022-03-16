@@ -114,6 +114,15 @@ def main(task : str,
     #pred_names = list(pred_dict_rev.keys())
 
     rulebook = torcher.rules(problem, dev, **rules_args)
+
+    if cut_down_rules is not None:
+        if type(cut_down_rules) == int:
+            rulebook = dilp.cut_down_rules(rulebook, cut_down_rules)
+        elif type(cut_down_rules) == float:
+            rulebook = dilp.cut_down_rules(rulebook, int(rulebook.body_predicates.shape[-1] * cut_down_rules))
+        else:
+            assert False, "cut_down_rules is not int or float"
+
     shape = rulebook.body_predicates.shape
 
     weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=dev), std=init_rand)) \
@@ -165,7 +174,7 @@ def main(task : str,
             for target_type, to_use_in_this_batch_of_type in zip(loader.TargetType, to_use_in_this_batch):
                 if len(to_use_in_this_batch_of_type) == 0:
                     continue
-                targets = batch.targets(target_type).idxs[torch.from_numpy(to_use_in_this_batch_of_type).to(dev)]
+                targets = batch.targets(target_type).idxs[torch.from_numpy(to_use_in_this_batch_of_type).to(dev, non_blocking=True)]
                 preds = dilp.extract_targets(vals, targets)
                 loss = dilp.loss(preds, target_type)
                 loss = loss * len(to_use_in_this_batch_of_type) / batch_size / 2
@@ -227,8 +236,8 @@ def main(task : str,
             valid_worlds = 0.0
             fuzzily_valid_worlds = 0.0
             dev = torch.device('cpu')
-            rulebook = rulebook.to(dev)
-            fuzzy = weights.detach().to(dev)
+            rulebook = rulebook.to(dev, non_blocking=True)
+            fuzzy = weights.detach().to(dev, non_blocking=True)
             crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).float(), rulebook)
             if validation_steps is None:
                 validation_steps = steps * 2
@@ -257,7 +266,7 @@ def main(task : str,
             
             valid_worlds /= len(validation_worlds)
             fuzzily_valid_worlds /= len(validation_worlds)
-            result = ' OK ' if valid_worlds == len(validation_worlds) else 'FAIL'
+            result = ' OK ' if valid_worlds == 1.0 else 'FAIL'
             print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} {total_loss=} ' +
                       f'{total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
     

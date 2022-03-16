@@ -11,7 +11,7 @@ import weird
 class Rulebook(NamedTuple):
     body_predicates : torch.Tensor
     variable_choices : torch.Tensor
-    mask : torch.Tensor
+    mask : torch.Tensor #boolean, true if rule is used
 
     def to(self, device : torch.device):
         return Rulebook(
@@ -133,20 +133,20 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
     variable_choices_ : List[torch.Tensor] = []
     rule_weights_ : List[torch.Tensor] = []
     for i, dev in enumerate(devices):
-        body_predicates_.append(body_predicates[i*per_dev:(i+1)*per_dev].to(dev))
-        variable_choices_.append(variable_choices[i*per_dev:(i+1)*per_dev].to(dev))
-        rule_weights_.append(rule_weights[i*per_dev:(i+1)*per_dev].to(dev))
+        body_predicates_.append(body_predicates[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
+        variable_choices_.append(variable_choices[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
+        rule_weights_.append(rule_weights[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
 
     val = base_val
     for step in range(steps):
         rets = []
         for i, dev in enumerate(devices):
             rets.append(infer_single_step(
-                ex_val = extend_val(val.to(dev)), 
+                ex_val = extend_val(val.to(dev, non_blocking=True)), 
                 body_predicates = body_predicates_[i],
                 variable_choices = variable_choices_[i],
                 rule_weights = rule_weights_[i]))
-        val = disjunction2(val, torch.cat([t.to(return_dev) for t in rets], dim=1))
+        val = disjunction2(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
     return val
 
 
@@ -222,3 +222,20 @@ def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict
             for elem in range(0, elements):
                 ret.append(rule_str([int(idxs[i][elem]) for i in range(2)], clause, pred, rulebook, pred_names) + '.')
             print(f"{pred_name.rjust(10, ' ')}(A,B) :- " + ' '.join(x.ljust(50, ' ') for x in ret))
+
+def cut_down_rules(rulebook : Rulebook, down_to : int) -> Rulebook:
+    ret_bp = rulebook.body_predicates.detach().clone()
+    ret_vc = rulebook.variable_choices.detach().clone()
+
+    for pred in range(rulebook.body_predicates.shape[0]):
+        for clause in range(2):
+            for body_pred in range(2):
+                used_rules : int = int(rulebook.mask[pred,clause,body_pred].sum().item())
+                permutation = torch.randperm(used_rules, device=ret_bp.device)
+                ret_bp[pred,clause,body_pred,:used_rules] = ret_bp[pred,clause,body_pred,:used_rules][permutation]
+
+    return Rulebook(
+        body_predicates = ret_bp[:,:,:,:down_to],
+        variable_choices = ret_vc[:,:,:,:down_to],
+        mask = rulebook.mask[:,:,:,:down_to],
+    )
