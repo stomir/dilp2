@@ -13,11 +13,11 @@ class Rulebook(NamedTuple):
     variable_choices : torch.Tensor
     mask : torch.Tensor #boolean, true if rule is used
 
-    def to(self, device : torch.device):
+    def to(self, device : torch.device, non_blocking : bool = True):
         return Rulebook(
-            body_predicates=self.body_predicates.to(device),
-            variable_choices=self.variable_choices.to(device),
-            mask=self.mask.to(device)
+            body_predicates=self.body_predicates.to(device, non_blocking=non_blocking),
+            variable_choices=self.variable_choices.to(device, non_blocking=non_blocking),
+            mask=self.mask.to(device, non_blocking=non_blocking)
         )
 
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
