@@ -79,3 +79,8 @@ inverted at the start?
 parametrized Łukasiewicz norms from some paper?
 
 ## Some loss to prefer one body predicate (for grandparent)?
+
+## Short program loss
+
+## Cut rules
+    randomly and things not used in earlier try

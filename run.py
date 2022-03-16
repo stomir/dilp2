@@ -104,7 +104,7 @@ def main(task : str,
     problem = loader.load_problem(os.path.join(task, dirs[0]), invented_count=inv)
 
     train_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('train')]
-    val_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('val')] \
+    validation_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('val')] \
                         + (train_worlds if validate_training else [])
 
     worlds_batches : Sequence[torcher.WorldsBatch] = [torcher.targets_batch(problem, worlds, dev) for worlds in torcher.chunks(worlds_batch_size, train_worlds)]
@@ -224,15 +224,15 @@ def main(task : str,
         with torch.no_grad():
             total_loss = 0.0
             total_fuzzy = 0.0
-            valid_worlds = 0
-            fuzzily_valid_worlds = 0
+            valid_worlds = 0.0
+            fuzzily_valid_worlds = 0.0
             dev = torch.device('cpu')
             rulebook = rulebook.to(dev)
             fuzzy = weights.detach().to(dev)
             crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).float(), rulebook)
             if validation_steps is None:
                 validation_steps = steps * 2
-            for i, world in enumerate(val_worlds):
+            for i, world in enumerate(validation_worlds):
                 base_val = torcher.base_val(problem, [world])
                 batch = torcher.targets_batch(problem, [world], dev)
                 fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy, rulebook.mask), steps=validation_steps)
@@ -255,7 +255,9 @@ def main(task : str,
                 if fuzzy_acc == 1.0:
                     fuzzily_valid_worlds += 1
             
-            result = ' OK ' if valid_worlds == len(val_worlds) else 'FAIL'
+            valid_worlds /= len(validation_worlds)
+            fuzzily_valid_worlds /= len(validation_worlds)
+            result = ' OK ' if valid_worlds == len(validation_worlds) else 'FAIL'
             print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} {total_loss=} ' +
                       f'{total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
     

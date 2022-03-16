@@ -173,7 +173,7 @@ def infer(base_val : torch.Tensor,
     if devices is None:
         return infer_steps(steps, base_val, rulebook, weights, 3)
     else:
-        return infer_steps_on_devs(steps, base_val, devices[-1], devices,
+        return infer_steps_on_devs(steps, base_val, weights.device, devices,
             rulebook.body_predicates, rulebook.variable_choices, weights)
 
 def loss(values : torch.Tensor, target_type : loader.TargetType) -> torch.Tensor:

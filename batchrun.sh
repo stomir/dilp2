@@ -1,7 +1,7 @@
 #!/bin/bash
 
 POSITIONAL_ARGS=()
-SRUN="srun -E -c 1 --gpus-per-node=1 -p IFIall"
+SRUN="srun -E -c 1 --gpus-per-node=4"
 FROM="1"
 KEEP=""
 TMP=""
@@ -13,8 +13,13 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
-    -s|--slurm)
+    -S|--slurm)
       SRUN="srun $2"
+      shift
+      shift
+      ;;
+    -s|--add_slurm)
+      SRUN="$SRUN $2"
       shift
       shift
       ;;
@@ -68,7 +73,7 @@ for i in `seq -w $FROM $TO`; do
 done
 OK=`cat $TMP/* | grep "result" | grep "OK" | wc -l`
 ALL=`cat $TMP/* | grep "result" | wc -l`
-FUZZY=`cat $TMP/* | grep "result" | grep -v fuzzily_valid_worlds=0 | wc -l`
+FUZZY=`cat $TMP/* | grep "result" | grep fuzzily_valid_worlds=1 | wc -l`
 echo "final: $OK/$ALL"
 echo "fuzzily correct: $FUZZY/$ALL"
 if [ -n "$KEEP" ]; then
