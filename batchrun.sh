@@ -73,7 +73,7 @@ for i in `seq -w $FROM $TO`; do
 done
 OK=`cat $TMP/* | grep "result" | grep "OK" | wc -l`
 ALL=`cat $TMP/* | grep "result" | wc -l`
-FUZZY=`cat $TMP/* | grep "result" | grep fuzzily_valid_worlds=1 | wc -l`
+FUZZY=`cat $TMP/* | grep "result" | grep -e OK -e FUZZ | wc -l`
 echo "final: $OK/$ALL"
 echo "fuzzily correct: $FUZZY/$ALL"
 if [ -n "$KEEP" ]; then

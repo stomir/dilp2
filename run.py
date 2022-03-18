@@ -161,12 +161,9 @@ def main(task : str,
                 logging.debug(f'skipped worlds batch {i} as nothing was chosen')
                 continue
 
-            logging.debug(f'{len(batch.targets(loader.TargetType.POSITIVE))=} {len(batch.targets(loader.TargetType.NEGATIVE))=} {num_to_use_in_this_batch=}')
-
             to_use_in_this_batch : Sequence[numpy.ndarray] = [numpy.random.choice(numpy.arange(len(batch.targets(target_type))), replace=False, size=to_choose)
                         for target_type, to_choose in zip(loader.TargetType, num_to_use_in_this_batch)]
 
-            logging.debug(f'{ws[0].device=} {batch.base_val.device=}')
             vals = dilp.infer(base_val = batch.base_val, rulebook = rulebook, 
                     weights = ws, steps=steps, devices = devs)
 
@@ -233,8 +230,8 @@ def main(task : str,
         with torch.no_grad():
             total_loss = 0.0
             total_fuzzy = 0.0
-            valid_worlds = 0.0
-            fuzzily_valid_worlds = 0.0
+            valid_worlds = 0
+            fuzzily_valid_worlds = 0
             dev = torch.device('cpu')
             rulebook = rulebook.to(dev, non_blocking=True)
             fuzzy = weights.detach().to(dev, non_blocking=True)
@@ -264,9 +261,10 @@ def main(task : str,
                 if fuzzy_acc == 1.0:
                     fuzzily_valid_worlds += 1
             
-            valid_worlds /= len(validation_worlds)
-            fuzzily_valid_worlds /= len(validation_worlds)
-            result = ' OK ' if valid_worlds == 1.0 else 'FAIL'
+            #valid_worlds /= len(validation_worlds)
+            #fuzzily_valid_worlds /= len(validation_worlds)
+            result = ' OK ' if valid_worlds == len(validation_worlds) else \
+                    'FUZZ' if fuzzily_valid_worlds == len(validation_worlds) else 'FAIL'
             print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} {total_loss=} ' +
                       f'{total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
     
