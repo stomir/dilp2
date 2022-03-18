@@ -2,3 +2,4 @@ front(lba, lb).
 front(lcba, lcb).
 front(la, l).
 front(ldcba, ldcb).
+front(ledcba, ledcb).

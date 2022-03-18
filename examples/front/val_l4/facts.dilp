@@ -16,4 +16,16 @@ head(ldcba, d).
 tail(ldcba, lcba).
 head(ldcb, d).
 tail(ldcb, lcb).
+head(ledcba, e).
+tail(ledcba, ldcba).
+head(ledcb, e).
+tail(ledcb, ldcb).
+
+head(ldcx, d).
+tail(ldcx, lcx).
+head(lcx, c).
+tail(lcx, lx).
+head(lx, x).
+tail(lx, l).
+
 empty(l, l).
