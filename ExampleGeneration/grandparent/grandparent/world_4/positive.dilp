@@ -1,0 +1,4 @@
+grandparent(2,5).
+grandparent(2,6).
+grandparent(3,5).
+grandparent(3,6).

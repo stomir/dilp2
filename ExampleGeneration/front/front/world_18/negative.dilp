@@ -1,0 +1,13 @@
+front(5,14).
+front(10,14).
+front(14,5).
+front(14,6).
+front(14,10).
+front(5,5).
+front(5,6).
+front(6,5).
+front(6,6).
+front(6,10).
+front(10,5).
+front(10,6).
+front(10,10).

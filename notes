@@ -3,3 +3,9 @@ this command did find fizz:
 python3 sample.py examples/fizz --inv 6 --epochs 1000  --norm mixed --norm_weight 1 --optim adam --steps 12 --unary zero,fizz --cuda True --mode True --functional True --normalize_threshold 1e-2
 
 this works for `even` if target is in
+this mostly solved member with split:
+srun --pty -p IFItitan -c 31 python3 sample.py examples/member --inv 10 --epochs 1000 --cuda True --norm mixed --norm_weight 1 --optim rmsprop --steps 6 --seed None --normalize_threshold=1e-2 --init_rand 10 --layers 10,
+
+this mostly solves even:
+python3 sample.py examples/even --inv 5 --epochs 2000  --norm mixed --norm_weight 1 --optim adam --steps 7 --unary zero,target --cuda True --normalize_threshold 1e-2
+python3 sample.py examples/even --inv 20 --epochs 500  --norm mixed --norm_weight 1 --optim adam --steps 7 --unary zero,target --cuda True --normalize_threshold 1e-2

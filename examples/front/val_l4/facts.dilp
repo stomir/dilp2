@@ -1,0 +1,19 @@
+head(la, a).
+tail(la, l).
+head(lba, b).
+tail(lba, la).
+head(lb, b).
+tail(lb, l).
+head(lcba, c).
+tail(lcba, lba).
+head(lcb, c).
+tail(lcb, lb).
+head(lc, c).
+tail(lc, l).
+
+
+head(ldcba, d).
+tail(ldcba, lcba).
+head(ldcb, d).
+tail(ldcb, lcb).
+empty(l, l).

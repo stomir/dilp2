@@ -1,0 +1,4 @@
+front(lba, la).
+front(l, l).
+front(lba, lba).
+front(lcba, lba).
