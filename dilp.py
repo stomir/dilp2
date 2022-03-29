@@ -43,7 +43,6 @@ def conjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
 def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return a.min(dim=dim)[0]
 
-
 disjunction2 = disjunction2_max
 disjunction_dim = disjunction_dim_max
 conjunction2 = conjunction2_max
@@ -144,21 +143,21 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
     variable_choices_ : List[torch.Tensor] = []
     rule_weights_ : List[torch.Tensor] = []
     for i, dev in enumerate(devices):
-        body_predicates_.append(body_predicates[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
-        variable_choices_.append(variable_choices[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
-        rule_weights_.append(rule_weights[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
+        body_predicates_.append(body_predicates[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=False))
+        variable_choices_.append(variable_choices[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=False))
+        rule_weights_.append(rule_weights[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=False))
 
     val = base_val
     for step in range(steps):
         rets = []
         for i, dev in enumerate(devices):
             rets.append(infer_single_step(
-                ex_val = extend_val(val.to(dev, non_blocking=True)), 
+                ex_val = extend_val(val.to(dev, non_blocking=False)), 
                 body_predicates = body_predicates_[i],
                 variable_choices = variable_choices_[i],
                 full_rules=full_rules,
                 rule_weights = rule_weights_[i]))
-        val = disjunction2(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
+        val = disjunction2(val, torch.cat([t.to(return_dev, non_blocking=False) for t in rets], dim=1))
     return val
 
 
@@ -192,7 +191,7 @@ def loss(values : torch.Tensor, target_type : loader.TargetType) -> torch.Tensor
     if target_type == loader.TargetType.POSITIVE:
         return -(values + 1e-10).log().mean()
     else:
-        return -(1-values + 1e-10).log().mean()
+        return loss(1-values, target_type=loader.TargetType.POSITIVE)
 
 def extract_targets(vals : torch.Tensor, targets : torch.Tensor) -> torch.Tensor:
     return vals[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]

@@ -38,7 +38,7 @@ def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) ->
 
 def main(task : str, 
         epochs : int, steps : int, 
-        batch_size : int,
+        batch_size : Optional[int],
         cuda : Union[int,bool] = False, inv : int = 0,
         debug : bool = False, norm : str = 'mixed',
         entropy_weight : float = 1.0,
@@ -60,11 +60,15 @@ def main(task : str,
         cut_down_rules : Union[int,float,None] = None,
         input : Optional[str] = None, output : Optional[str] = None,
         tensorboard : Optional[str] = None,
+        use_float64 : bool = False,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    if use_float64:
+        torch.set_default_tensor_type(torch.DoubleTensor)
 
     if seed is not None:
         seed = int(seed)
@@ -151,34 +155,60 @@ def main(task : str,
 
         chosen_worlds_batches = [numpy.random.choice(choices_of_type, replace=False, size=batch_size) for choices_of_type in choices]
 
+        all_worlds_sizes = dict((t, sum(len(b.targets(t)) for b in worlds_batches)) for t in loader.TargetType)
+
         loss_sum = 0.0
 
         for i, batch in enumerate(worlds_batches):
             ws = masked_softmax(weights, rulebook.mask)
-            num_to_use_in_this_batch : Sequence[int] = [(chosen_worlds_batches_of_type == i).sum() for chosen_worlds_batches_of_type in chosen_worlds_batches]
 
-            if sum(num_to_use_in_this_batch) == 0:
-                logging.debug(f'skipped worlds batch {i} as nothing was chosen')
-                continue
+            torch.save(ws, "dumb_output")
 
-            to_use_in_this_batch : Sequence[numpy.ndarray] = [numpy.random.choice(numpy.arange(len(batch.targets(target_type))), replace=False, size=to_choose)
-                        for target_type, to_choose in zip(loader.TargetType, num_to_use_in_this_batch)]
+            assert (ws < 0).sum() == 0 and (ws > 1).sum() == 0, f"{ws=} {i=}"
 
             vals = dilp.infer(base_val = batch.base_val, rulebook = rulebook, 
-                    weights = ws, steps=steps, devices = devs)
+                        weights = ws, steps=steps, devices = devs)
 
-            ls = torch.as_tensor(0.0, device=dev)
-            for target_type, to_use_in_this_batch_of_type in zip(loader.TargetType, to_use_in_this_batch):
-                if len(to_use_in_this_batch_of_type) == 0:
+            assert (vals < 0).sum() == 0 and (vals > 1.1).sum() == 0, f"{vals=} {(vals < 0).sum()=} {(vals > 1).sum()=} {ws=} {i=} {steps=} {devices=} {batch=}"
+
+            if batch_size is not None:
+                num_to_use_in_this_batch : Sequence[int] = [(chosen_worlds_batches_of_type == i).sum() for chosen_worlds_batches_of_type in chosen_worlds_batches]
+
+                if sum(num_to_use_in_this_batch) == 0:
+                    logging.debug(f'skipped worlds batch {i} as nothing was chosen')
                     continue
-                targets = batch.targets(target_type).idxs[torch.from_numpy(to_use_in_this_batch_of_type).to(dev, non_blocking=True)]
-                preds = dilp.extract_targets(vals, targets)
-                loss = dilp.loss(preds, target_type)
-                loss = loss * len(to_use_in_this_batch_of_type) / batch_size / 2
 
-                ls = ls + loss
+                to_use_in_this_batch : Sequence[numpy.ndarray] = [numpy.random.choice(numpy.arange(len(batch.targets(target_type))), replace=False, size=to_choose)
+                            for target_type, to_choose in zip(loader.TargetType, num_to_use_in_this_batch)]
+
+                ls = torch.as_tensor(0.0, device=dev)
+                for target_type, to_use_in_this_batch_of_type in zip(loader.TargetType, to_use_in_this_batch):
+                    if len(to_use_in_this_batch_of_type) == 0:
+                        continue
+                    targets = batch.targets(target_type).idxs[torch.from_numpy(to_use_in_this_batch_of_type).to(dev, non_blocking=False)]
+                    preds = dilp.extract_targets(vals, targets)
+                    loss = dilp.loss(preds, target_type)
+                    loss = loss * (len(to_use_in_this_batch_of_type) / batch_size / 2)
+
+                    assert loss >= -1e-5, f"{target_type=} {loss=} {preds=} {vals=}"
+
+                    ls = ls + loss
+            else:
+
+                ls = torch.as_tensor(0.0, device=dev)
+                for target_type in loader.TargetType:
+                    targets = batch.targets(target_type).idxs.to(dev, non_blocking=False)
+                    preds = dilp.extract_targets(vals, targets)
+                    loss = dilp.loss(preds, target_type)
+
+                    assert loss >= -1e-5, f"{target_type=} {loss=} {preds=}"
+
+                    ls = ls + loss
+
+                ls = ls * len(batch.targets(target_type)) / all_worlds_sizes[target_type] / 2
 
             ls.backward()
+            assert ls >= -1e-5
             loss_sum += ls.item()
 
             del loss, vals, targets, preds, ls
@@ -233,8 +263,8 @@ def main(task : str,
             valid_worlds = 0
             fuzzily_valid_worlds = 0
             dev = torch.device('cpu')
-            rulebook = rulebook.to(dev, non_blocking=True)
-            fuzzy = weights.detach().to(dev, non_blocking=True)
+            rulebook = rulebook.to(dev, non_blocking=False)
+            fuzzy = weights.detach().to(dev, non_blocking=False)
             crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).float(), rulebook)
             if validation_steps is None:
                 validation_steps = steps * 2
@@ -282,9 +312,9 @@ def norm_loss(weights : torch.Tensor) -> torch.Tensor:
     #x = weights.softmax(-1)
     x = weights
     #x = x * (1-x)
-    logsoftmax = x.log_softmax(-1)
-    softmax = logsoftmax.exp()
-    x = (softmax * logsoftmax)
+    #logsoftmax = x.log_softmax(-1)
+    #softmax = x.softmax(-1)
+    x = (x.softmax(-1) * x.log_softmax(-1))
     #x = (x * x.log())
     return -x.sum()
 

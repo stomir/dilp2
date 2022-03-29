@@ -17,6 +17,8 @@ fizz, 20 steps:
 | 50       | `17/20`     | 30    |
 | 70       | `15/20`     | 20    |
 
+at 100 `even` becomes really bad? (is it connected to `full_rules`?)
+
 ## Is batching helpful?
 
 YES, at least when examples are unbalanced: `14/20` vs `9/20`
