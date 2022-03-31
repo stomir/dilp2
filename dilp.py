@@ -114,34 +114,25 @@ def infer_single_step(ex_val : torch.Tensor,
         del shape[2]
         ex_val = ex_val.reshape(shape)
         ex_val = ex_val.unsqueeze(0).unsqueeze(0).unsqueeze(0)
-    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
     #rule weighing
     rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) #atoms
     rule_weights = rule_weights.unsqueeze(0) #worlds
     ex_val = ex_val#.unsqueeze(-5).unsqueeze(-5)
     logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
-    assert (rule_weights.sum(dim=-1) > 1).sum() == 0
-    assert (rule_weights < 0).sum() == 0
     ex_val = ex_val * rule_weights
     ex_val = ex_val.sum(dim = -4)
     ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
     
     control_valve = torch.max(ex_val.detach()-1, torch.zeros(size=(), device=ex_val.device))
-
     ex_val = ex_val - control_valve
-
-    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
     #conjuction of body predictes
     ex_val = conjunction_dim(ex_val, -4)
-    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
     #existential quantification
     ex_val = disjunction_dim(ex_val, -1)
-    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
     #disjunction on clauses
     ex_val = disjunction_dim(ex_val, -3)
     logging.debug(f"returning {ex_val.shape=}")
-    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
-    
+   
     return ex_val
 
 def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
@@ -172,8 +163,6 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
                 full_rules=full_rules,
                 rule_weights = rule_weights_[i]))
         val = disjunction2(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
-        
-        assert (val < 0).sum() == 0 and (val > 1).sum() == 0, f"{(val < 0).sum()=} {(val > 1).sum()=}"
     
     return val
 
