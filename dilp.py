@@ -27,7 +27,7 @@ def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
 def disjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     if a.shape[dim] == 2:
         disjunction2_prod(*a.split(1, dim=dim))
-    return 1 - ((1- a).prod(dim))
+    return 1 - ((1 - a).prod(dim))
 def conjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a * b
 def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
@@ -39,7 +39,8 @@ def disjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
 def disjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return torch.max(a, dim=dim)[0]
 def conjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
-    return torch.min(a, b)
+    #return torch.min(a, b)
+    return a.where(a<b, b)
 def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return a.min(dim=dim)[0]
 
@@ -113,21 +114,34 @@ def infer_single_step(ex_val : torch.Tensor,
         del shape[2]
         ex_val = ex_val.reshape(shape)
         ex_val = ex_val.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
     #rule weighing
     rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) #atoms
     rule_weights = rule_weights.unsqueeze(0) #worlds
     ex_val = ex_val#.unsqueeze(-5).unsqueeze(-5)
     logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
+    assert (rule_weights.sum(dim=-1) > 1).sum() == 0
+    assert (rule_weights < 0).sum() == 0
     ex_val = ex_val * rule_weights
     ex_val = ex_val.sum(dim = -4)
     ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
+    
+    control_valve = torch.max(ex_val.detach()-1, torch.zeros(size=(), device=ex_val.device))
+
+    ex_val = ex_val - control_valve
+
+    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
     #conjuction of body predictes
     ex_val = conjunction_dim(ex_val, -4)
+    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
     #existential quantification
     ex_val = disjunction_dim(ex_val, -1)
+    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
     #disjunction on clauses
     ex_val = disjunction_dim(ex_val, -3)
     logging.debug(f"returning {ex_val.shape=}")
+    assert (ex_val < 0).sum() == 0 and (ex_val > 1).sum() == 0, f"{(ex_val < 0).sum()=} {(ex_val > 1).sum()=}"
+    
     return ex_val
 
 def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
@@ -143,21 +157,24 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
     variable_choices_ : List[torch.Tensor] = []
     rule_weights_ : List[torch.Tensor] = []
     for i, dev in enumerate(devices):
-        body_predicates_.append(body_predicates[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=False))
-        variable_choices_.append(variable_choices[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=False))
-        rule_weights_.append(rule_weights[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=False))
+        body_predicates_.append(body_predicates[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
+        variable_choices_.append(variable_choices[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
+        rule_weights_.append(rule_weights[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
 
     val = base_val
     for step in range(steps):
         rets = []
         for i, dev in enumerate(devices):
             rets.append(infer_single_step(
-                ex_val = extend_val(val.to(dev, non_blocking=False)), 
+                ex_val = extend_val(val.to(dev, non_blocking=True)), 
                 body_predicates = body_predicates_[i],
                 variable_choices = variable_choices_[i],
                 full_rules=full_rules,
                 rule_weights = rule_weights_[i]))
-        val = disjunction2(val, torch.cat([t.to(return_dev, non_blocking=False) for t in rets], dim=1))
+        val = disjunction2(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
+        
+        assert (val < 0).sum() == 0 and (val > 1).sum() == 0, f"{(val < 0).sum()=} {(val > 1).sum()=}"
+    
     return val
 
 

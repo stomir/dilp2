@@ -15,6 +15,7 @@ import os
 import loader
 import torcher
 import sys
+import traceback
 from torch.utils.tensorboard import SummaryWriter
 
 def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
@@ -159,88 +160,93 @@ def main(task : str,
 
         loss_sum = 0.0
 
-        for i, batch in enumerate(worlds_batches):
-            ws = masked_softmax(weights, rulebook.mask)
+        try:
 
-            torch.save(ws, "dumb_output")
+            for i, batch in enumerate(worlds_batches):
+                ws = masked_softmax(weights, rulebook.mask)
 
-            assert (ws < 0).sum() == 0 and (ws > 1).sum() == 0, f"{ws=} {i=}"
+                assert (ws < 0).sum() == 0 and (ws > 1).sum() == 0, f"{ws=} {i=}"
 
-            vals = dilp.infer(base_val = batch.base_val, rulebook = rulebook, 
-                        weights = ws, steps=steps, devices = devs)
+                vals = dilp.infer(base_val = batch.base_val, rulebook = rulebook, 
+                            weights = ws, steps=steps, devices = devs)
 
-            assert (vals < 0).sum() == 0 and (vals > 1.1).sum() == 0, f"{vals=} {(vals < 0).sum()=} {(vals > 1).sum()=} {ws=} {i=} {steps=} {devices=} {batch=}"
+                assert (vals < 0).sum() == 0 and (vals > 1).sum() == 0, f"{(vals < 0).sum()=} {(vals > 1).sum()=} {i=} {steps=} {devices=} {vals.max()=}"
 
-            if batch_size is not None:
-                num_to_use_in_this_batch : Sequence[int] = [(chosen_worlds_batches_of_type == i).sum() for chosen_worlds_batches_of_type in chosen_worlds_batches]
+                if batch_size is not None:
+                    num_to_use_in_this_batch : Sequence[int] = [(chosen_worlds_batches_of_type == i).sum() for chosen_worlds_batches_of_type in chosen_worlds_batches]
 
-                if sum(num_to_use_in_this_batch) == 0:
-                    logging.debug(f'skipped worlds batch {i} as nothing was chosen')
-                    continue
-
-                to_use_in_this_batch : Sequence[numpy.ndarray] = [numpy.random.choice(numpy.arange(len(batch.targets(target_type))), replace=False, size=to_choose)
-                            for target_type, to_choose in zip(loader.TargetType, num_to_use_in_this_batch)]
-
-                ls = torch.as_tensor(0.0, device=dev)
-                for target_type, to_use_in_this_batch_of_type in zip(loader.TargetType, to_use_in_this_batch):
-                    if len(to_use_in_this_batch_of_type) == 0:
+                    if sum(num_to_use_in_this_batch) == 0:
+                        logging.debug(f'skipped worlds batch {i} as nothing was chosen')
                         continue
-                    targets = batch.targets(target_type).idxs[torch.from_numpy(to_use_in_this_batch_of_type).to(dev, non_blocking=False)]
-                    preds = dilp.extract_targets(vals, targets)
-                    loss = dilp.loss(preds, target_type)
-                    loss = loss * (len(to_use_in_this_batch_of_type) / batch_size / 2)
 
-                    assert loss >= -1e-5, f"{target_type=} {loss=} {preds=} {vals=}"
+                    to_use_in_this_batch : Sequence[numpy.ndarray] = [numpy.random.choice(numpy.arange(len(batch.targets(target_type))), replace=False, size=to_choose)
+                                for target_type, to_choose in zip(loader.TargetType, num_to_use_in_this_batch)]
 
-                    ls = ls + loss
-            else:
+                    ls = torch.as_tensor(0.0, device=dev)
+                    for target_type, to_use_in_this_batch_of_type in zip(loader.TargetType, to_use_in_this_batch):
+                        if len(to_use_in_this_batch_of_type) == 0:
+                            continue
+                        targets = batch.targets(target_type).idxs[torch.from_numpy(to_use_in_this_batch_of_type).to(dev, non_blocking=False)]
+                        preds = dilp.extract_targets(vals, targets)
+                        loss = dilp.loss(preds, target_type)
+                        loss = loss * (len(to_use_in_this_batch_of_type) / batch_size / 2)
 
-                ls = torch.as_tensor(0.0, device=dev)
-                for target_type in loader.TargetType:
-                    targets = batch.targets(target_type).idxs.to(dev, non_blocking=False)
-                    preds = dilp.extract_targets(vals, targets)
-                    loss = dilp.loss(preds, target_type)
+                        assert loss >= 0, f"{target_type=} {loss=} {preds=} {vals=}"
 
-                    assert loss >= -1e-5, f"{target_type=} {loss=} {preds=}"
+                        ls = ls + loss
+                else:
 
-                    ls = ls + loss
+                    ls = torch.as_tensor(0.0, device=dev)
+                    for target_type in loader.TargetType:
+                        targets = batch.targets(target_type).idxs.to(dev, non_blocking=False)
+                        preds = dilp.extract_targets(vals, targets)
+                        loss = dilp.loss(preds, target_type)
 
-                ls = ls * len(batch.targets(target_type)) / all_worlds_sizes[target_type] / 2
+                        assert loss >= -1e-5, f"{target_type=} {loss=} {preds=}"
 
-            ls.backward()
-            assert ls >= -1e-5
-            loss_sum += ls.item()
+                        ls = ls + loss
 
-            del loss, vals, targets, preds, ls
-            torch.cuda.empty_cache()
-        
-        if normalize_gradients is not None:
-            with torch.no_grad():
-                for fuzzy in weights:
-                    #w /= w.sum(-1, keepdim=True) * w.sign()
-                    fuzzy[:] = torch.nn.functional.normalize(fuzzy, dim=-1)
-                    fuzzy *= normalize_gradients
+                    ls = ls * len(batch.targets(target_type)) / all_worlds_sizes[target_type] / 2
+
+                ls.backward()
+                assert ls >= 0
+                loss_sum += ls.item()
+
+                del loss, vals, targets, preds, ls
+                torch.cuda.empty_cache()
             
-        if entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
-            entropy_enabled = True
-        
-        entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
-        entropy_loss = mask(entropy_loss, rulebook)
-        actual_entropy = entropy_loss.mean()
-        if entropy_enabled:
-            if entropy_gradient_ratio is not None:
-                entropy_loss = entropy_loss * entropy_gradient_ratio * weights.norm(p=2, dim=-1, keepdim=True)
-            entropy_loss = entropy_loss.mean()
-            if entropy_weight_in_use < 1.0 and entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
-                entropy_weight_in_use += entropy_weight_step
-            entropy_loss *= entropy_weight_in_use * entropy_weight
-            entropy_loss.backward()
+            if normalize_gradients is not None:
+                with torch.no_grad():
+                    for fuzzy in weights:
+                        #w /= w.sum(-1, keepdim=True) * w.sign()
+                        fuzzy[:] = torch.nn.functional.normalize(fuzzy, dim=-1)
+                        fuzzy *= normalize_gradients
+                
+            if entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
+                entropy_enabled = True
+            
+            entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
+            entropy_loss = mask(entropy_loss, rulebook)
+            actual_entropy = entropy_loss.mean()
+            if entropy_enabled:
+                if entropy_gradient_ratio is not None:
+                    entropy_loss = entropy_loss * entropy_gradient_ratio * weights.norm(p=2, dim=-1, keepdim=True)
+                entropy_loss = entropy_loss.mean()
+                if entropy_weight_in_use < 1.0 and entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
+                    entropy_weight_in_use += entropy_weight_step
+                entropy_loss *= entropy_weight_in_use * entropy_weight
+                entropy_loss.backward()
 
-        if clip is not None:
-            torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
+            if clip is not None:
+                torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
 
-        opt.step()
-        #adjust_weights(weights)
+            opt.step()
+            #adjust_weights(weights)
+        except AssertionError as e:
+            weights_file : str = output + "_faulty" if output is not None else "faulty_weights"
+            logging.error(f"assertion during backprop, saving weights to {weights_file}\n{traceback.format_exc()}")
+            torch.save(weights.detach(), weights_file)
+            raise e
 
         tq.set_postfix(entropy = actual_entropy.item(), batch_loss = loss_sum, entropy_weight=entropy_weight_in_use * entropy_weight)
         if tb is not None:

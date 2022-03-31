@@ -63,7 +63,7 @@ if [ -z "$TMP" ]; then
   TMP=`mktemp -d`
 fi
 for i in `seq -w $FROM $TO`; do
-  ( $SRUN -E -J dilp/`basename $EXAMPLE`/$i/`basename $TMP` python3 run.py $EXAMPLE $FLAGS --seed $i > $TMP/$i )&
+  ( $SRUN -E -J dilp/`basename $EXAMPLE`/$i/`basename $TMP` python3 run.py $EXAMPLE $FLAGS --seed $i > $TMP/$i 2> $TMP/$i.err )&
 done
 wait || exit $?
 echo "all results:"
