@@ -74,17 +74,15 @@ def load_problem(dir : str, invented_count : int) -> Problem:
     targets = set(f[0] for f in examples)
 
     all_preds : Dict[str, int] = {}
-    all_preds.update(zip(list(bk) + list(targets), range(1,len(targets)+len(bk))))
-
-    invented = list(range(len(targets)+len(bk), len(targets)+len(bk)+invented_count))
-    all_preds.update((f'inv_{i}', n) for i, n in enumerate(invented))
+    inv_names = [f'inv_{i}' for i in range(invented_count)]
+    all_preds.update(zip(list(bk) + list(targets) + inv_names, range(len(targets)+len(bk)+invented_count)))
 
     logging.info(f'loaded problem from {dir}')
     return Problem(
         predicates = all_preds,
         bk = set(all_preds[p] for p in bk),
         targets = set(all_preds[p] for p in targets),
-        invented = set(invented)
+        invented = set(all_preds[p] for p in inv_names),
     )
     
 def load_world(dir : str, problem : Problem) -> World:

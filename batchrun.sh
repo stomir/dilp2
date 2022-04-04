@@ -55,7 +55,10 @@ else
     FLAGS="${@:3}"
 fi
 
-echo "FLAGS: $FLAGS"
+echo "example: $EXAMPLE"
+echo "seeds: $FROM - $TO"
+echo "output: $TMP"
+echo "flags: $FLAGS"
 
 set CUBLAS_WORKSPACE_CONFIG=":4096:8"
 
