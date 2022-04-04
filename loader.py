@@ -34,7 +34,8 @@ class TargetType(IntEnum):
 class Problem(NamedTuple):
     predicates : Dict[str, int]
     bk : Set[int]
-    main : int
+    #main : int
+    targets : Set[int]
     invented : Set[int]
 
 class World(NamedTuple):
@@ -71,21 +72,18 @@ def load_problem(dir : str, invented_count : int) -> Problem:
 
     bk = set(f[0] for f in facts)
     targets = set(f[0] for f in examples)
-    target = next(iter(targets))
-    if len(targets) != 1:
-        raise ValueError('number of target predicates other than 1')
 
-    all_preds : Dict[str, int] = {target : 0}
-    all_preds.update(zip(bk, range(1,1+len(bk))))
+    all_preds : Dict[str, int] = {}
+    all_preds.update(zip(list(bk) + list(targets), range(1,len(targets)+len(bk))))
 
-    invented = list(range(1+len(bk), 1+len(bk)+invented_count))
+    invented = list(range(len(targets)+len(bk), len(targets)+len(bk)+invented_count))
     all_preds.update((f'inv_{i}', n) for i, n in enumerate(invented))
 
     logging.info(f'loaded problem from {dir}')
     return Problem(
         predicates = all_preds,
         bk = set(all_preds[p] for p in bk),
-        main = all_preds[target],
+        targets = set(all_preds[p] for p in targets),
         invented = set(invented)
     )
     
@@ -97,8 +95,8 @@ def load_world(dir : str, problem : Problem) -> World:
     atoms = dict(zip(atoms_set, range(len(atoms_set))))
     positive = list(indexify(load_facts(os.path.join(dir, 'positive.dilp')), problem.predicates, atoms))
     negative = list(indexify(load_facts(os.path.join(dir, 'negative.dilp')), problem.predicates, atoms))
-    assert all(head == problem.main for head, _, _ in positive)
-    assert all(head == problem.main for head, _, _ in negative)
+    assert all(head in problem.targets for head, _, _ in positive)
+    assert all(head in problem.targets for head, _, _ in negative)
 
     logging.info(f'loaded world from {dir}')
     return World(

@@ -91,3 +91,7 @@ parametrized Łukasiewicz norms from some paper?
 |-------------|-----|--------|--------------|
 | `even` (20 20) with cut `0.5` | `examples/even/ --inv 20 --steps 20 --epochs 1000 --devices 0,1,2,3 --cuda False --batch_size 4 --cut_down_rules 0.5 ` | `17/20` | `18/20` |
 | `even` with `30` inv and cut `0.5` | `examples/even/ --inv 30 --steps 20 --epochs 1000 --devices 0,1,2,3 --cuda False --batch_size 4 --cut_down_rules 0.5 ` | `17/20` | `20/20` |
+
+## Training multiple targets
+
+ Mahalanobis distance

@@ -234,7 +234,7 @@ def main(task : str,
                 entropy_loss = entropy_loss.mean()
                 if entropy_weight_in_use < 1.0 and entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
                     entropy_weight_in_use += entropy_weight_step
-                entropy_loss *= entropy_weight_in_use * entropy_weight
+                entropy_loss = entropy_loss * entropy_weight_in_use * entropy_weight
                 entropy_loss.backward()
 
             if clip is not None:
