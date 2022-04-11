@@ -5,6 +5,14 @@ SRUN="srun -E -c 1 --gpus-per-node=4"
 FROM="1"
 KEEP=""
 TMP=""
+TIMES="1"
+
+results () {
+  for i in `seq -w $FROM $TO`; do
+    echo -n "$i: "
+    cat $TMP/$i | grep result | tail -n 1
+  done
+}
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -25,6 +33,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     -k|--keep)
       KEEP="yes"
+      shift
+      ;;
+    --times)
+      TIMES="$2"
+      shift
       shift
       ;;
     -od|--outdir)
@@ -55,10 +68,11 @@ else
     FLAGS="${@:3}"
 fi
 
-echo "example: $EXAMPLE"
+echo "problem: $EXAMPLE"
 echo "seeds: $FROM - $TO"
 echo "output: $TMP"
 echo "flags: $FLAGS"
+echo "repetitions: $TIMES"
 
 set CUBLAS_WORKSPACE_CONFIG=":4096:8"
 
@@ -66,17 +80,21 @@ if [ -z "$TMP" ]; then
   TMP=`mktemp -d`
 fi
 for i in `seq -w $FROM $TO`; do
-  ( $SRUN -E -J dilp/`basename $EXAMPLE`/$i/`basename $TMP` python3 run.py $EXAMPLE $FLAGS --seed $i > $TMP/$i 2> $TMP/$i.err )&
+  ( 
+    for t in `seq 1 $TIMES`; do
+      $SRUN -E -J dilp/`basename $EXAMPLE`/$i/$t/`basename $TMP` python3 run.py $EXAMPLE $FLAGS --seed $i 2> >(tee -a $TMP/$i.err) >> $TMP/$i
+    done
+  )&
 done
 wait || exit $?
 echo "all results:"
 for i in `seq -w $FROM $TO`; do
   echo -n "$i: "
-  cat $TMP/$i | grep result
+  cat $TMP/$i | grep result | tail -n 1
 done
-OK=`cat $TMP/* | grep "result" | grep "OK" | wc -l`
-ALL=`cat $TMP/* | grep "result" | wc -l`
-FUZZY=`cat $TMP/* | grep "result" | grep -e OK -e FUZZ | wc -l`
+OK=`results | grep "OK" | wc -l`
+ALL=`results | wc -l`
+FUZZY=`results | grep -e OK -e FUZZ | wc -l`
 echo "final: $OK/$ALL"
 echo "fuzzily correct: $FUZZY/$ALL"
 if [ -n "$KEEP" ]; then

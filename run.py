@@ -62,6 +62,7 @@ def main(task : str,
         input : Optional[str] = None, output : Optional[str] = None,
         tensorboard : Optional[str] = None,
         use_float64 : bool = False,
+        checkpoint : Optional[str] = None,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -70,6 +71,21 @@ def main(task : str,
 
     if use_float64:
         torch.set_default_tensor_type(torch.DoubleTensor)
+
+    if input is not None:
+        input = input.format(**locals())
+    
+    if output is not None:
+        output = output.format(**locals())
+
+    if checkpoint is not None:
+        checkpoint = checkpoint.format(**locals())
+        assert input is None and output is None
+        if not os.path.isfile(checkpoint):
+            logging.warning(f"No file {checkpoint} found, starting from scratch")
+        else:
+            input = checkpoint
+        output = checkpoint
 
     if seed is not None:
         seed = int(seed)
@@ -132,11 +148,7 @@ def main(task : str,
 
     weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=dev), std=init_rand)) \
         if init == 'normal' else torch.nn.Parameter(torch.rand([shape[0], 2, 2, shape[3]], device=dev) * init_rand)
-
-    if input is not None:
-        with torch.load(input) as w:
-            weights[:] = w.to(dev)
-            logging.info(f'loaded weights from {input}')
+    epoch : int = 0
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
     if optim == 'rmsprop':
@@ -147,11 +159,21 @@ def main(task : str,
         opt = torch.optim.SGD([weights], lr=lr)
     else:
         assert False
-        
+
     entropy_enabled = entropy_enable_threshold is None
     entropy_weight_in_use = 0.0 if entropy_enable_threshold is not None else 1.0
 
-    for epoch in (tq := tqdm(range(0, int(epochs)))):
+    if input is not None:
+        w, opt_sd, epoch, entropy_enabled, entropy_weight_in_use = torch.load(input)
+        with torch.no_grad():
+            weights[:] = w.to(dev)
+        opt.load_state_dict(opt_sd)
+        logging.info(f'loaded weights from {input}')
+        del w, opt_sd
+        
+
+    for _ in (tq := tqdm(range(0, int(epochs)))):
+        epoch += 1
         opt.zero_grad()
 
         chosen_worlds_batches = [numpy.random.choice(choices_of_type, replace=False, size=batch_size) for choices_of_type in choices]
@@ -215,12 +237,13 @@ def main(task : str,
                 del loss, vals, targets, preds, ls
                 torch.cuda.empty_cache()
             
-            if normalize_gradients is not None:
-                with torch.no_grad():
-                    for fuzzy in weights:
-                        #w /= w.sum(-1, keepdim=True) * w.sign()
-                        fuzzy[:] = torch.nn.functional.normalize(fuzzy, dim=-1)
-                        fuzzy *= normalize_gradients
+            # if normalize_gradients is not None:
+            #     with torch.no_grad():
+            #         for fuzzy in [weights]:
+            #             #w /= w.sum(-1, keepdim=True) * w.sign()
+            #             if fuzzy.grad is not None:
+            #                 fuzzy.grad[:] = torch.nn.functional.normalize(fuzzy.grad, dim=-1)
+            #                 fuzzy.grad *= normalize_gradients
                 
             if entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
                 entropy_enabled = True
@@ -240,6 +263,10 @@ def main(task : str,
             if clip is not None:
                 torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
 
+            
+            if end_early is not None and loss_sum < end_early:
+                break
+
             opt.step()
             #adjust_weights(weights)
         except AssertionError as e:
@@ -254,9 +281,6 @@ def main(task : str,
                 {'entropy' : actual_entropy.item(), 'batch_loss' : loss_sum, 
                 'entropy_weight' : entropy_weight_in_use * entropy_weight},
                 global_step=epoch)
-
-        if end_early is not None and loss_sum < end_early:
-            break
 
     dilp.print_program(rulebook, mask(weights, rulebook), torcher.rev_dict(problem.predicates))
     
@@ -305,7 +329,10 @@ def main(task : str,
                       f'{total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
     
     if output is not None:
-        torch.save(weights.detach().cpu(), output)
+        torch.save((weights.detach().cpu(), opt.state_dict(), epoch, entropy_enabled, entropy_weight_in_use), output)
+        logging.info(f"saved weights to {output}")
+
+    #END
 
 def adjust_weights(weights : List[torch.nn.Parameter]):
     with torch.no_grad():
