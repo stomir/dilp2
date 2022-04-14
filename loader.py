@@ -22,7 +22,7 @@ arguments = (pp.Suppress('(') + pp.delimitedList(argument) +
 fact = (relationship + arguments).setResultsName('facts', listAllMatches=True)
 
 # a sentence is a fact plus a period
-sentence = fact + pp.Suppress('.')
+sentence = fact + pp.Optional(pp.Suppress('.'))
 
 # self explanatory
 prolog_sentences = pp.OneOrMore(sentence)
@@ -40,6 +40,8 @@ class Problem(NamedTuple):
 
 class World(NamedTuple):
     atoms : Dict[str, int]
+    dir : str
+    train : bool
     facts : Sequence[Tuple[int,int,int]]
     positive : Sequence[Tuple[int,int,int]]
     negative : Sequence[Tuple[int,int,int]]
@@ -59,7 +61,7 @@ def load_facts(filename : str) -> Iterable[Tuple[str,str,str]]:
         args : Sequence[str] = data['arguments'][idx]
         if len(args) != 2:
             raise ValueError(f'predicate arity other than 2, {fact=} {predicate=} {args=}')
-        logging.debug(f'{(predicate, args[0], args[1])=}')
+        logging.debug(f'fact loaded {(predicate, args[0], args[1])}')
         yield (predicate, args[0], args[1])
 
 def indexify(data : Iterable[Tuple[str,str,str]], preds : Dict[str, int], atoms : Dict[str, int]) -> Iterable[Tuple[int,int,int]]:
@@ -85,7 +87,7 @@ def load_problem(dir : str, invented_count : int) -> Problem:
         invented = set(all_preds[p] for p in inv_names),
     )
     
-def load_world(dir : str, problem : Problem) -> World:
+def load_world(dir : str, problem : Problem, train : bool) -> World:
     logging.debug(f'loading world from {dir}')
     facts = list(load_facts(os.path.join(dir, 'facts.dilp')))
     atoms_set : Set[str] = set.union(*(set(f[1:]) for f in facts))
@@ -102,4 +104,6 @@ def load_world(dir : str, problem : Problem) -> World:
         facts = list(indexify(facts, problem.predicates, atoms)),
         positive = positive,
         negative = negative,
+        dir = dir,
+        train = train,
     )

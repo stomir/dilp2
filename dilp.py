@@ -34,7 +34,7 @@ def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return a.prod(dim=dim)
 
 def disjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
-    #return torch.max(a, b)
+    return torch.max(a, b)
     return a.where(a>b, b)
 def disjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return torch.max(a, dim=dim)[0]
@@ -120,8 +120,9 @@ def infer_single_step(ex_val : torch.Tensor,
     ex_val = ex_val#.unsqueeze(-5).unsqueeze(-5)
     logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
     ex_val = ex_val * rule_weights
+     
     ex_val = ex_val.sum(dim = -4)
-    ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
+    #ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
     
     control_valve = torch.max(ex_val.detach()-1, torch.zeros(size=(), device=ex_val.device))
     ex_val = ex_val - control_valve

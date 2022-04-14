@@ -4,6 +4,20 @@
 
 - does it generalize well
 
+## Batch size seems to be a suprisingly important parameter
+`bash batchrun.sh 20 examples/even/ --inv 20 --steps 20 --epochs 1000 --batch_size 1 --cuda True --full_rules True -S '--gpus-per-node 1 -c 4'`
+
+| Batch size | Valid   | Fuzzy   |
+|------------|---------|---------|
+| 1          | `13/20` | `16/20` |
+| 2          | `14/20` | `19/20` |
+| 3          | `18/20` | `20/20` |
+| 4          | `14/20` | `17/20` |
+| 5          | `17/20` | `19/20` |
+| None       | `16/20` | `18/20` |
+| 4 again    | `13/20` | `15/20` |
+
+note: `batch_size` defines number of examples of single type (so there are twice as many when counting positive and negative together)
 ## Is too much prediates harmful?
 
 fizz, 20 steps:

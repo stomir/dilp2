@@ -1,7 +1,7 @@
 #!/bin/bash
 
 POSITIONAL_ARGS=()
-SRUN="srun -E -c 1 --gpus-per-node=4"
+SRUN="srun -E -c 31 --gpus-per-node=4"
 FROM="1"
 KEEP=""
 TMP=""
@@ -82,7 +82,7 @@ fi
 for i in `seq -w $FROM $TO`; do
   ( 
     for t in `seq 1 $TIMES`; do
-      $SRUN -E -J dilp/`basename $EXAMPLE`/$i/$t/`basename $TMP` python3 run.py $EXAMPLE $FLAGS --seed $i 2> >(tee -a $TMP/$i.err) >> $TMP/$i
+      $SRUN -J dilp/`basename $EXAMPLE`/$i/$t/`basename $TMP` python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
     done
   )&
 done

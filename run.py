@@ -124,8 +124,8 @@ def main(task : str,
     logging.info(f'{dirs=}')
     problem = loader.load_problem(os.path.join(task, dirs[0]), invented_count=inv)
 
-    train_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('train')]
-    validation_worlds = [loader.load_world(os.path.join(task, d), problem = problem) for d in dirs if d.startswith('val')] \
+    train_worlds = [loader.load_world(os.path.join(task, d), problem = problem, train = True) for d in dirs if d.startswith('train')]
+    validation_worlds = [loader.load_world(os.path.join(task, d), problem = problem, train = False) for d in dirs if d.startswith('val')] \
                         + (train_worlds if validate_training else [])
 
     worlds_batches : Sequence[torcher.WorldsBatch] = [torcher.targets_batch(problem, worlds, dev) for worlds in torcher.chunks(worlds_batch_size, train_worlds)]
@@ -146,6 +146,7 @@ def main(task : str,
 
     shape = rulebook.body_predicates.shape
 
+    assert init in {'normal', 'uniform'}
     weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=dev), std=init_rand)) \
         if init == 'normal' else torch.nn.Parameter(torch.rand([shape[0], 2, 2, shape[3]], device=dev) * init_rand)
     epoch : int = 0
@@ -224,7 +225,7 @@ def main(task : str,
                         preds = dilp.extract_targets(vals, targets)
                         loss = dilp.loss(preds, target_type)
 
-                        assert loss >= -1e-5, f"{target_type=} {loss=} {preds=}"
+                        assert loss >= 0, f"{target_type=} {loss=} {preds=}"
 
                         ls = ls + loss
 
@@ -313,7 +314,7 @@ def main(task : str,
                 target_values = report[:,0]
                 fuzzy_acc = (fuzzy_report.round() == target_values).float().mean().item()
                 crisp_acc = (crisp_report == target_values).float().mean().item()
-                logging.info(f'world {i} {fuzzy_acc=} {crisp_acc=}\n{report.numpy()}')
+                logging.info(f'world {i} {dir=} {fuzzy_acc=} {crisp_acc=}\n{report.numpy()}')
                 total_loss += crisp_loss.item()
                 total_fuzzy += fuzzy_loss.item()
                 if crisp_acc == 1.0:

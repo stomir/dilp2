@@ -1,0 +1,5 @@
+target(a,b)
+target(b,a)
+target(b,d)
+target(d,b)
+target(c,c)

@@ -1,0 +1,4 @@
+target(0,0).
+target(5,5).
+target(10,10).
+target(15,15).
