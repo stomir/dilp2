@@ -39,12 +39,12 @@ def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) ->
 
 def main(task : str, 
         epochs : int, steps : int, 
-        batch_size : Optional[int],
+        batch_size : Optional[Union[int, float]],
         cuda : Union[int,bool] = False, inv : int = 0,
         debug : bool = False, norm : str = 'mixed',
         entropy_weight : float = 1.0,
         optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
-        init_rand : float = 10,
+        init_size : float = 10,
         info : bool = False,
         entropy_enable_threshold : Optional[float] = 1e-2,
         normalize_gradients : Optional[float] = None,
@@ -147,8 +147,8 @@ def main(task : str,
     shape = rulebook.body_predicates.shape
 
     assert init in {'normal', 'uniform'}
-    weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=dev), std=init_rand)) \
-        if init == 'normal' else torch.nn.Parameter(torch.rand([shape[0], 2, 2, shape[3]], device=dev) * init_rand)
+    weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=dev), std=init_size)) \
+        if init == 'normal' else torch.nn.Parameter(torch.rand([shape[0], 2, 2, shape[3]], device=dev) * init_size)
     epoch : int = 0
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
@@ -177,14 +177,19 @@ def main(task : str,
         epoch += 1
         opt.zero_grad()
 
-        chosen_worlds_batches = [numpy.random.choice(choices_of_type, replace=False, size=batch_size) for choices_of_type in choices]
+        if type(batch_size) is int:
+            chosen_worlds_batches = [numpy.random.choice(choices_of_type, replace=False, size=batch_size) for choices_of_type in choices]
+        elif type(batch_size) is float:
+            chosen_per_world_batch : Dict[loader.TargetType, Sequence[torch.Tensor]] = dict((ttype, [(torch.rand(len(batch.targets(ttype)), device=dev) <= batch_size) for batch in worlds_batches]) for ttype in loader.TargetType)
+            chosen_per_ttype : Dict[loader.TargetType, int] = dict((ttype, sum(int(c.sum().item()) for c in chosen_per_world_batch[ttype])) for ttype in loader.TargetType)
+
 
         all_worlds_sizes = dict((t, sum(len(b.targets(t)) for b in worlds_batches)) for t in loader.TargetType)
 
         loss_sum = 0.0
 
         try:
-
+            target_losses : List[float] = []
             for i, batch in enumerate(worlds_batches):
                 ws = masked_softmax(weights, rulebook.mask)
 
@@ -195,7 +200,8 @@ def main(task : str,
 
                 assert (vals < 0).sum() == 0 and (vals > 1).sum() == 0, f"{(vals < 0).sum()=} {(vals > 1).sum()=} {i=} {steps=} {devices=} {vals.max()=}"
 
-                if batch_size is not None:
+                if type(batch_size) is int:
+                    assert False, "not currently supported"
                     num_to_use_in_this_batch : Sequence[int] = [(chosen_worlds_batches_of_type == i).sum() for chosen_worlds_batches_of_type in chosen_worlds_batches]
 
                     if sum(num_to_use_in_this_batch) == 0:
@@ -220,16 +226,32 @@ def main(task : str,
                 else:
 
                     ls = torch.as_tensor(0.0, device=dev)
+                    one_target_loss = 0.0
                     for target_type in loader.TargetType:
                         targets = batch.targets(target_type).idxs.to(dev, non_blocking=False)
                         preds = dilp.extract_targets(vals, targets)
-                        loss = dilp.loss(preds, target_type)
+                        loss = dilp.loss(preds, target_type, reduce=False)
+
+                        one_target_loss += loss.detach().mean().item() / 2
+
+                        if type(batch_size) is float:
+                            chosen = chosen_per_world_batch[target_type][i]
+                            #chosen = torch.from_numpy(chosen_here).to(dev, non_blocking=False)
+                            if chosen.sum() != 0:
+                                loss = (loss.where(chosen, torch.zeros(size=(), device=loss.device)).sum()) / chosen.sum()
+                                loss = loss * int(chosen.sum().item()) / chosen_per_ttype[target_type] / 2
+                            else:
+                                loss = torch.zeros(size=(), device=loss.device)
+                        else:
+                            loss = loss.mean()
+                            loss = loss * len(batch.targets(target_type)) / all_worlds_sizes[target_type] / 2
 
                         assert loss >= 0, f"{target_type=} {loss=} {preds=}"
 
                         ls = ls + loss
 
-                    ls = ls * len(batch.targets(target_type)) / all_worlds_sizes[target_type] / 2
+                    ls = ls 
+                    target_losses.append(one_target_loss)
 
                 ls.backward()
                 assert ls >= 0
@@ -276,10 +298,12 @@ def main(task : str,
             torch.save(weights.detach(), weights_file)
             raise e
 
-        tq.set_postfix(entropy = actual_entropy.item(), batch_loss = loss_sum, entropy_weight=entropy_weight_in_use * entropy_weight)
+        target_loss = sum(target_losses) / len(target_losses)
+        tq.set_postfix(entropy = actual_entropy.item(), batch_loss = loss_sum, entropy_weight=entropy_weight_in_use * entropy_weight, target_loss = target_loss)
         if tb is not None:
             tb.add_scalars("train", 
                 {'entropy' : actual_entropy.item(), 'batch_loss' : loss_sum, 
+                'target_loss' : target_loss,
                 'entropy_weight' : entropy_weight_in_use * entropy_weight},
                 global_step=epoch)
 
@@ -293,6 +317,8 @@ def main(task : str,
             total_fuzzy = 0.0
             valid_worlds = 0
             fuzzily_valid_worlds = 0
+            valid_tr_worlds = 0
+            fuzzily_valid_tr_worlds = 0
             dev = torch.device('cpu')
             rulebook = rulebook.to(dev, non_blocking=False)
             fuzzy = weights.detach().to(dev, non_blocking=False)
@@ -319,13 +345,20 @@ def main(task : str,
                 total_fuzzy += fuzzy_loss.item()
                 if crisp_acc == 1.0:
                     valid_worlds += 1
+                    if world.train:
+                        valid_tr_worlds += 1
                 if fuzzy_acc == 1.0:
                     fuzzily_valid_worlds += 1
+                    if world.train:
+                        fuzzily_valid_tr_worlds += 1
             
             #valid_worlds /= len(validation_worlds)
             #fuzzily_valid_worlds /= len(validation_worlds)
-            result = ' OK ' if valid_worlds == len(validation_worlds) else \
-                    'FUZZ' if fuzzily_valid_worlds == len(validation_worlds) else 'FAIL'
+            result ='     OK      ' if valid_worlds == len(validation_worlds) else \
+                    '    FUZZY    ' if fuzzily_valid_worlds == len(validation_worlds) else \
+                    '   OVERFIT   ' if valid_tr_worlds == len(train_worlds) else \
+                    'FUZZY OVERFIT' if fuzzily_valid_tr_worlds == len(train_worlds) else \
+                    '    FAIL     '
             print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} {total_loss=} ' +
                       f'{total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
     

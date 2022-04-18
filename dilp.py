@@ -194,11 +194,14 @@ def infer(base_val : torch.Tensor,
         return infer_steps_on_devs(steps, base_val, weights.device, devices,
             rulebook.body_predicates, rulebook.variable_choices, weights, full_rules=rulebook.full_rules)
 
-def loss(values : torch.Tensor, target_type : loader.TargetType) -> torch.Tensor:
+def loss(values : torch.Tensor, target_type : loader.TargetType, reduce : bool = True) -> torch.Tensor:
     if target_type == loader.TargetType.POSITIVE:
-        return -(values + 1e-10).log().mean()
+        ret = -(values + 1e-10).log()
+        if reduce:
+            ret = ret.mean()
+        return ret
     else:
-        return loss(1-values, target_type=loader.TargetType.POSITIVE)
+        return loss(1-values, target_type=loader.TargetType.POSITIVE, reduce=reduce)
 
 def extract_targets(vals : torch.Tensor, targets : torch.Tensor) -> torch.Tensor:
     return vals[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]

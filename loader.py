@@ -8,9 +8,9 @@ from enum import IntEnum
 relationship = pp.Word(pp.alphas).setResultsName('relationship', listAllMatches=True)
 
 number = pp.Word(pp.nums + '.')
-variable = pp.Word(pp.alphas)
+variable = pp.Word(pp.alphas + pp.nums)
 # an argument to a relationship can be either a number or a variable
-argument = number | variable
+argument = pp.Word(pp.alphas + pp.nums + '.')
 
 # arguments are a delimited list of 'argument' surrounded by parenthesis
 arguments = (pp.Suppress('(') + pp.delimitedList(argument) +
@@ -53,12 +53,12 @@ def rev_dict(d : Dict[A, B]) -> Dict[B, A]:
 
 def load_facts(filename : str) -> Iterable[Tuple[str,str,str]]:
     logging.debug(f'loading facts from {filename}')
-    with open(filename) as f:
-        data = prolog_sentences.parseString(f.read().replace('\n', ' '))
-    for idx in range(len(data['facts'])):
-        fact = data['facts'][idx]
-        predicate : str = data['relationship'][idx]
-        args : Sequence[str] = data['arguments'][idx]
+    lines = (stripped for line in open(filename).readlines() if (stripped := line.strip(' \t\n')) != '')   
+    for line in lines:
+        logging.debug(f'loading fact {line=}')
+        data = sentence.parseString(line)
+        predicate : str = data['relationship'][0]
+        args : Sequence[str] = list(data['arguments'][0])
         if len(args) != 2:
             raise ValueError(f'predicate arity other than 2, {fact=} {predicate=} {args=}')
         logging.debug(f'fact loaded {(predicate, args[0], args[1])}')

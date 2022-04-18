@@ -88,15 +88,12 @@ for i in `seq -w $FROM $TO`; do
 done
 wait || exit $?
 echo "all results:"
-for i in `seq -w $FROM $TO`; do
-  echo -n "$i: "
-  cat $TMP/$i | grep result | tail -n 1
-done
+results | tee -a $TMP/report
 OK=`results | grep "OK" | wc -l`
 ALL=`results | wc -l`
 FUZZY=`results | grep -e OK -e FUZZ | wc -l`
-echo "final: $OK/$ALL"
-echo "fuzzily correct: $FUZZY/$ALL"
+echo "final: $OK/$ALL" | tee -a $TMP/report
+echo "fuzzily correct: $FUZZY/$ALL" | tee -a $TMP/report
 if [ -n "$KEEP" ]; then
   >&2 echo "all results in $TMP"
 else 
