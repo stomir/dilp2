@@ -1,0 +1,4 @@
+undir_edge(a,b)
+undir_edge(b,a)
+undir_edge(c,d)
+undir_edge(d,c)

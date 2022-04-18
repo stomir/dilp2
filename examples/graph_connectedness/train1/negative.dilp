@@ -1,0 +1,7 @@
+conn(c,a)
+conn(c,b)
+conn(c,c)
+conn(d,a)
+conn(d,b)
+conn(d,c)
+conn(d,d)

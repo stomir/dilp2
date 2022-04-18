@@ -1,0 +1,13 @@
+zero(0,0)
+empty(l,l)
+
+succ(0,1)
+succ(1,2)
+succ(2,3)
+
+head(l321,3)
+tail(l321,l21)
+head(l21,2)
+tail(l21,l1)
+head(l1,1)
+tail(l1, l)
