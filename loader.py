@@ -8,7 +8,7 @@ from enum import IntEnum
 relationship = pp.Word(pp.alphas).setResultsName('relationship', listAllMatches=True)
 
 number = pp.Word(pp.nums + '.')
-variable = pp.Word(pp.alphas + pp.nums)
+variable = pp.Word(pp.alphas + pp.nums + '_')
 # an argument to a relationship can be either a number or a variable
 argument = pp.Word(pp.alphas + pp.nums + '.')
 
