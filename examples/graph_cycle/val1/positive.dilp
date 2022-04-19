@@ -1,2 +1,7 @@
 cyclic(a,a)
 cyclic(b,b)
+
+cyclic(x,x)
+cyclic(y,y)
+cyclic(z,z)
+cyclic(q,q)

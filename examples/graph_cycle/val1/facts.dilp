@@ -2,3 +2,8 @@ edge(a,b)
 edge(b,a)
 edge(d,c)
 edge(d,b)
+
+edge(x,y)
+edge(y,z)
+edge(z,q)
+edge(q,x)
