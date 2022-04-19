@@ -288,8 +288,8 @@ def main(task : str,
             if clip is not None:
                 torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
 
-            
-            if end_early is not None and loss_sum < end_early:
+            target_loss = sum(target_losses) / len(target_losses)
+            if end_early is not None and target_loss < end_early:
                 break
 
             opt.step()
@@ -299,8 +299,7 @@ def main(task : str,
             logging.error(f"assertion during backprop, saving weights to {weights_file}\n{traceback.format_exc()}")
             torch.save(weights.detach(), weights_file)
             raise e
-
-        target_loss = sum(target_losses) / len(target_losses)
+        
         tq.set_postfix(entropy = actual_entropy.item(), batch_loss = loss_sum, entropy_weight=entropy_weight_in_use * entropy_weight, target_loss = target_loss)
         if tb is not None:
             tb.add_scalars("train", 
