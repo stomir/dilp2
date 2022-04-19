@@ -1,0 +1,4 @@
+adj_to_red(a,a)
+adj_to_red(c,c)
+adj_to_red(e,e)
+adj_to_red(g,g)
