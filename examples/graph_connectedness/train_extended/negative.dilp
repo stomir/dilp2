@@ -1,2 +1,6 @@
+conn(a,c2)
+conn(a,d2)
 conn(a,e2)
+conn(a2,c)
+conn(a2,d)
 conn(a2,e)
