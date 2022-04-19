@@ -250,10 +250,11 @@ def main(task : str,
 
                         ls = ls + loss
 
-                    ls = ls 
+                    #ls = ls 
                     target_losses.append(one_target_loss)
 
-                ls.backward()
+                if ls.item() != 0:
+                    ls.backward()
                 assert ls >= 0
                 loss_sum += ls.item()
 
@@ -310,7 +311,7 @@ def main(task : str,
     dilp.print_program(rulebook, mask(weights, rulebook), torcher.rev_dict(problem.predicates))
     
     if validate:
-        last_target = loss_sum
+        last_target = target_loss
         last_entropy = actual_entropy.item()
         with torch.no_grad():
             total_loss = 0.0
