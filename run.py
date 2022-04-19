@@ -253,6 +253,7 @@ def main(task : str,
                     #ls = ls 
                     target_losses.append(one_target_loss)
 
+                logging.debug(f"{ls=} {ls.item()=}")
                 if ls.item() != 0:
                     ls.backward()
                 assert ls >= 0
