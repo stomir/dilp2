@@ -91,9 +91,13 @@ echo "all results:"
 results | tee -a $TMP/report
 OK=`results | grep "OK" | wc -l`
 ALL=`results | wc -l`
-FUZZY=`results | grep -e OK -e FUZZ | wc -l`
+FUZZY=`results | grep -e OK -e FUZZY | grep -v OVERFIT | wc -l`
+TRAIN=`results | grep -e OK -e OVERFIT | wc -l`
+FUZZY_OVERFIT=`results | grep -e OK -e FUZZY | wc -l`
 echo "final: $OK/$ALL" | tee -a $TMP/report
 echo "fuzzily correct: $FUZZY/$ALL" | tee -a $TMP/report
+echo "correct on training: $TRAIN/$ALL"
+echo "fuzzily correct on training: $FUZZY_OVERFIT/$ALL"
 if [ -n "$KEEP" ]; then
   >&2 echo "all results in $TMP"
 else 

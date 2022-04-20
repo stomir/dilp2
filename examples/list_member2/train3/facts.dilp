@@ -1,0 +1,15 @@
+head(ldefg,d)
+head(lbcdefg,b)
+head(lefg,e)
+head(labcdefg,a)
+head(lcdefg,c)
+head(lfg,f)
+head(lg,g)
+
+tail(labcdefg,lbcdefg)
+tail(lbcdefg,lcdefg)
+tail(lcdefg,ldefg
+tail(ldefg,lefg)
+tail(lefg,lfg)
+tail(lfg,lg)
+tail(lg,l)
