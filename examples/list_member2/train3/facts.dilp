@@ -8,7 +8,7 @@ head(lg,g)
 
 tail(labcdefg,lbcdefg)
 tail(lbcdefg,lcdefg)
-tail(lcdefg,ldefg
+tail(lcdefg,ldefg)
 tail(ldefg,lefg)
 tail(lefg,lfg)
 tail(lfg,lg)
