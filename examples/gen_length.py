@@ -1,14 +1,17 @@
 from genutils import *
+from typing import *
+
+def wurl(n : int) -> Iterable:
+    yield from range(n+1)
+    yield from lists(''.join(chr(ord('a') + i) for i in range(n)))
 
 class Train:
-    def world1(x):
-        yield from range(7)
-        yield from lists('abcdefg')
+    def world1(x) -> Iterable:
+        yield from wurl(6)
 
 class Validate:
-    def world1(x):
-        yield from range(10)
-        yield from lists('abcdefghij')
+    def world1(x) -> Iterable:
+        yield from wurl(10)
 
 class BK:
     def zero(a,b):
