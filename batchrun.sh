@@ -61,11 +61,15 @@ else
     FLAGS="${@:3}"
 fi
 
-echo "problem: $EXAMPLE"
-echo "seeds: $FROM - $TO"
-echo "output: $TMP"
-echo "flags: $FLAGS"
-echo "repetitions: $TIMES"
+echoo () {
+  echo $1 | tee -a $TMP/report
+}
+
+echoo "problem: $EXAMPLE"
+echoo "seeds: $FROM - $TO"
+echoo "output: $TMP"
+echoo "flags: $FLAGS"
+echoo "repetitions: $TIMES"
 
 set CUBLAS_WORKSPACE_CONFIG=":4096:8"
 
@@ -86,10 +90,6 @@ results () {
     echo -n "$i: "
     cat $TMP/$i | grep result | tail -n 1
   done
-}
-
-echoo () {
-  echo $1 | tee -a $TMP/report
 }
 
 echoo "all results:"
