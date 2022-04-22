@@ -7,13 +7,6 @@ KEEP=""
 TMP=""
 TIMES="1"
 
-results () {
-  for i in `seq -w $FROM $TO`; do
-    echo -n "$i: "
-    cat $TMP/$i | grep result | tail -n 1
-  done
-}
-
 while [[ $# -gt 0 ]]; do
   case $1 in
     -f|--from)
@@ -87,13 +80,29 @@ for i in `seq -w $FROM $TO`; do
   )&
 done
 wait || exit $?
-echo "all results:"
+
+results () {
+  for i in `seq -w $FROM $TO`; do
+    echo -n "$i: "
+    cat $TMP/$i | grep result | tail -n 1
+  done
+}
+
+echoo () {
+  echo $1 | tee -a $TMP/report
+}
+
+echoo "all results:"
 results | tee -a $TMP/report
 OK=`results | grep "OK" | wc -l`
 ALL=`results | wc -l`
-FUZZY=`results | grep -e OK -e FUZZ | wc -l`
-echo "final: $OK/$ALL" | tee -a $TMP/report
-echo "fuzzily correct: $FUZZY/$ALL" | tee -a $TMP/report
+FUZZY=`results | grep -e OK -e FUZZY | grep -v OVERFIT | wc -l`
+TRAIN=`results | grep -e OK -e OVERFIT | wc -l`
+FUZZY_OVERFIT=`results | grep -e OK -e FUZZY | wc -l`
+echoo "final: $OK/$ALL"
+echoo "fuzzily correct: $FUZZY/$ALL"
+echoo "correct on training: $TRAIN/$ALL"
+echoo "fuzzily correct on training: $FUZZY_OVERFIT/$ALL"
 if [ -n "$KEEP" ]; then
   >&2 echo "all results in $TMP"
 else 

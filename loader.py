@@ -5,12 +5,11 @@ import logging
 from enum import IntEnum
 
 # relationship will refer to 'track' in all of your examples
-relationship = pp.Word(pp.alphas).setResultsName('relationship', listAllMatches=True)
-
 number = pp.Word(pp.nums + '.')
-variable = pp.Word(pp.alphas + pp.nums)
+variable = pp.Word(pp.alphas + pp.nums + '_')
+relationship = variable.setResultsName('relationship', listAllMatches=True)
 # an argument to a relationship can be either a number or a variable
-argument = pp.Word(pp.alphas + pp.nums + '.')
+argument = pp.Word(pp.alphas + pp.nums + '.' + '_')
 
 # arguments are a delimited list of 'argument' surrounded by parenthesis
 arguments = (pp.Suppress('(') + pp.delimitedList(argument) +

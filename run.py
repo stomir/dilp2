@@ -250,10 +250,12 @@ def main(task : str,
 
                         ls = ls + loss
 
-                    ls = ls 
+                    #ls = ls 
                     target_losses.append(one_target_loss)
 
-                ls.backward()
+                logging.debug(f"{ls=} {ls.item()=}")
+                if ls.item() != 0:
+                    ls.backward()
                 assert ls >= 0
                 loss_sum += ls.item()
 
@@ -286,8 +288,8 @@ def main(task : str,
             if clip is not None:
                 torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
 
-            
-            if end_early is not None and loss_sum < end_early:
+            target_loss = sum(target_losses) / len(target_losses)
+            if end_early is not None and target_loss < end_early:
                 break
 
             opt.step()
@@ -297,8 +299,7 @@ def main(task : str,
             logging.error(f"assertion during backprop, saving weights to {weights_file}\n{traceback.format_exc()}")
             torch.save(weights.detach(), weights_file)
             raise e
-
-        target_loss = sum(target_losses) / len(target_losses)
+        
         tq.set_postfix(entropy = actual_entropy.item(), batch_loss = loss_sum, entropy_weight=entropy_weight_in_use * entropy_weight, target_loss = target_loss)
         if tb is not None:
             tb.add_scalars("train", 
@@ -310,7 +311,7 @@ def main(task : str,
     dilp.print_program(rulebook, mask(weights, rulebook), torcher.rev_dict(problem.predicates))
     
     if validate:
-        last_target = loss_sum
+        last_target = target_loss
         last_entropy = actual_entropy.item()
         with torch.no_grad():
             total_loss = 0.0
