@@ -340,7 +340,7 @@ def main(task : str,
                 target_values = report[:,0]
                 fuzzy_acc = (fuzzy_report.round() == target_values).float().mean().item()
                 crisp_acc = (crisp_report == target_values).float().mean().item()
-                logging.info(f'world {i} {dir=} {fuzzy_acc=} {crisp_acc=}\n{report.numpy()}')
+                logging.info(f'world {i} {world.dir=} {fuzzy_acc=} {crisp_acc=}\n{report.numpy()}')
                 total_loss += crisp_loss.item()
                 total_fuzzy += fuzzy_loss.item()
                 if crisp_acc == 1.0:
