@@ -7,7 +7,7 @@ class Train:
 
 class Validate:
     def world1(x) -> Iterable:
-        yield from range(25)
+        yield from range(28)
 
 class BK:
     def zero(a,b):

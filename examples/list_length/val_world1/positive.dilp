@@ -1,0 +1,8 @@
+length(list_1234567,7)
+length(list_234567,6)
+length(list_34567,5)
+length(list_4567,4)
+length(list_567,3)
+length(list_67,2)
+length(list_7,1)
+length(0,0)

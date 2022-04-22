@@ -99,7 +99,7 @@ ALL=`results | wc -l`
 FUZZY=`results | grep -e OK -e FUZZY | grep -v OVERFIT | wc -l`
 TRAIN=`results | grep -e OK -e OVERFIT | wc -l`
 FUZZY_OVERFIT=`results | grep -e OK -e FUZZY | wc -l`
-echoo "final: $OK/$ALL"
+echoo "all correct: $OK/$ALL"
 echoo "fuzzily correct: $FUZZY/$ALL"
 echoo "correct on training: $TRAIN/$ALL"
 echoo "fuzzily correct on training: $FUZZY_OVERFIT/$ALL"

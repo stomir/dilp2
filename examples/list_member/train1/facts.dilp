@@ -1,8 +1,0 @@
-head(labcd, a)
-tail(labcd, lbcd)
-head(lbcd, b)
-tail(lbcd, lcd)
-head(lcd, c)
-tail(lcd, ld)
-head(ld, d)
-tail(ld, l)

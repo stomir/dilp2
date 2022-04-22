@@ -1,0 +1,8 @@
+head(list_4321,4)
+head(list_321,3)
+head(list_21,2)
+head(list_1,1)
+tail(list_4321,list_321)
+tail(list_321,list_21)
+tail(list_21,list_1)
+tail(list_1,0)

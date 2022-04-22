@@ -21,17 +21,17 @@ def call(function : Callable, a1, a2) -> Optional[bool]:
         pass
     return False
 
-def facts(function : Callable, name : str, atoms : set) -> Iterable[str]:
+def facts(function : Callable, name : str, atoms : Iterable) -> Iterable[str]:
     for a1 in atoms:
         for a2 in atoms:
             if call(function, a1, a2):
                 yield (f"{name}({repr(a1)}, {repr(a2)})")
 
-def preds(obj, atoms : set) -> Iterable[str]:
+def preds(obj, atoms : Iterable) -> Iterable[str]:
     for name, function in inspect.getmembers(obj, inspect.isfunction):
         yield from facts(function, name, atoms)
 
-def gen_world(atoms : set, outdir : str, module):
+def gen_world(atoms : Iterable, outdir : str, module):
     os.mkdir(outdir)
     with open(os.path.join(outdir, 'facts.dilp'), 'w') as facts_file:
         for name, func in inspect.getmembers(module.BK, inspect.isfunction):
@@ -66,13 +66,13 @@ def main(name : str, outdir : Optional[str] = None, info : bool = True):
     os.mkdir(outdir)
 
     for name, func in inspect.getmembers(module.Train, inspect.isfunction):
-        atoms = set(func(None))
+        atoms = list(func(None))
         dirname = os.path.join(outdir, 'train_'+name)
         logging.info(f"=== training world {name} {dirname=} {atoms=}")
         gen_world(atoms, dirname, module)
 
     for name, func in inspect.getmembers(module.Validate, inspect.isfunction):
-        atoms = set(func(None))
+        atoms = list(func(None))
         dirname = os.path.join(outdir, 'val_'+name)
         logging.info(f"=== validation world {name} {dirname=} {atoms=}")
         gen_world(atoms, dirname, module)

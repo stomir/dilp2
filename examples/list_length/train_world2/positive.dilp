@@ -1,0 +1,4 @@
+length(list_123,3)
+length(list_23,2)
+length(list_3,1)
+length(0,0)

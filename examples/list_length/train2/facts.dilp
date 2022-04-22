@@ -1,9 +1,0 @@
-zero(0,0)
-
-succ(0,1)
-succ(1,2)
-succ(2,3)
-
-tail(l321,l21)
-tail(l21,l1)
-tail(l1, 0)
