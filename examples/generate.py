@@ -12,8 +12,7 @@ def repr(atom):
 
 def call(function : Callable, a1, a2) -> Optional[bool]:
     try:
-        if function(a1, a2):
-            return True
+        return function(a1, a2)
     except Skip:
         return None
     except TypeError:

@@ -1,4 +1,4 @@
 length(l321,3)
 length(l21,2)
 length(l1,1)
-length(l,0)
+length(0,0)
