@@ -2,7 +2,6 @@ from genutils import *
 from typing import *
 
 def wurl(n : int) -> Iterable:
-    yield from range(n+1)
     yield from lists(''.join(chr(ord('a') + i) for i in range(n)))
 
 class Train:
@@ -14,11 +13,8 @@ class Validate:
         yield from wurl(10)
 
 class BK:
-    def zero(a,b):
-        return a == 0 and b == 0
-
-    def succ(a,b):
-        return a+1 == b
+    #def empty(a,b):
+        #return a == b and len(a) == 0
 
     def head(a,b):
         return type(a) is tuple and a[0] == b
@@ -27,7 +23,7 @@ class BK:
         return a[1:] == b and a != ()
 
 class Targets:
-    def length(a,b):
-        if type(a) is not tuple or type(b) is not int:
+    def member(a,b):
+        if type(b) is not tuple or type(a) is not str:
             raise Skip
-        return len(a) == b
+        return a in b
