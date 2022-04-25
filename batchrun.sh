@@ -47,6 +47,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [ -z "$TMP" ]; then
+  TMP=`mktemp -d`
+fi
+
 set -- "${POSITIONAL_ARGS[@]}"
 
 if [[ "$2" =~ ^[0-9]+$ ]]; then
@@ -73,9 +77,6 @@ echoo "repetitions: $TIMES"
 
 set CUBLAS_WORKSPACE_CONFIG=":4096:8"
 
-if [ -z "$TMP" ]; then
-  TMP=`mktemp -d`
-fi
 for i in `seq -w $FROM $TO`; do
   ( 
     for t in `seq 1 $TIMES`; do
