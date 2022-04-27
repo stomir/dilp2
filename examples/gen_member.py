@@ -13,17 +13,17 @@ class Validate:
         yield from wurl(10)
 
 class BK:
+    #def empty(a,b):
+        #return a == b and len(a) == 0
+
     def head(a,b):
         return type(a) is tuple and a[0] == b
 
     def tail(a,b):
         return a[1:] == b and a != ()
 
-    def empty(a,b):
-        return a == b and len(a) == 0
-
 class Targets:
     def member(a,b):
         if type(b) is not tuple or type(a) is not str:
             raise Skip
-        return a in set(b)
+        return a in b

@@ -7,7 +7,7 @@ def wurl(n : int) -> Iterable:
 
 class Train:
     def world1(x) -> Iterable:
-        yield from wurl(6)
+        yield from wurl(5)
 
 class Validate:
     def world1(x) -> Iterable:

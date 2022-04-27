@@ -76,7 +76,7 @@ def load_problem(dir : str, invented_count : int) -> Problem:
     targets = set(f[0] for f in examples)
 
     all_preds : Dict[str, int] = {}
-    inv_names = [f'inv_{i}' for i in range(invented_count)]
+    inv_names = [f'inv{i}' for i in range(invented_count)]
     all_preds.update(zip(list(bk) + list(targets) + inv_names, range(len(targets)+len(bk)+invented_count)))
 
     logging.info(f'loaded problem from {dir}')
