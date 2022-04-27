@@ -161,6 +161,5 @@ def rules(problem : Problem,
     #    mask = torch.as_tensor([pred not in problem.bk for pred in range(pred_dim)], dtype=torch.bool, device=dev).unsqueeze(1).unsqueeze(1).unsqueeze(1)
 
     return Rulebook(
-        mask = ret,
-        full_rules = full_rules
+        mask = ret.to(dev)
     )

@@ -5,7 +5,6 @@ SRUN="srun -E -c 31 --gpus-per-node=4"
 FROM="1"
 KEEP=""
 TMP=""
-TIMES="1"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -26,11 +25,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     -k|--keep)
       KEEP="yes"
-      shift
-      ;;
-    --times)
-      TIMES="$2"
-      shift
       shift
       ;;
     -od|--outdir)
@@ -73,17 +67,12 @@ echoo "problem: $EXAMPLE"
 echoo "seeds: $FROM - $TO"
 echoo "output: $TMP"
 echoo "flags: $FLAGS"
-echoo "repetitions: $TIMES"
 
 set CUBLAS_WORKSPACE_CONFIG=":4096:8"
 
 for i in `seq -w $FROM $TO`; do
-  ( 
-    for t in `seq 1 $TIMES`; do
       $SRUN -J dilp/`basename $EXAMPLE`/$i/$t/`basename $TMP` python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
       #$SRUN python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
-    done
-  )&
 done
 wait || exit $?
 
