@@ -58,7 +58,6 @@ def main(task : str,
         worlds_batch_size : int = 1,
         devices : Optional[List[int]] = None,
         entropy_gradient_ratio : Optional[float] = None,
-        cut_down_rules : Union[int,float,None] = None,
         input : Optional[str] = None, output : Optional[str] = None,
         tensorboard : Optional[str] = None,
         use_float64 : bool = False,
@@ -136,15 +135,7 @@ def main(task : str,
 
     rulebook = torcher.rules(problem, dev, **rules_args)
 
-    if cut_down_rules is not None:
-        if type(cut_down_rules) == int:
-            rulebook = dilp.cut_down_rules(rulebook, cut_down_rules)
-        elif type(cut_down_rules) == float:
-            rulebook = dilp.cut_down_rules(rulebook, int(rulebook.body_predicates.shape[-1] * cut_down_rules))
-        else:
-            assert False, "cut_down_rules is not int or float"
-
-    shape = rulebook.body_predicates.shape
+    shape = rulebook.mask.shape
 
     assert init in {'normal', 'uniform'}
     weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=dev), std=init_size)) \
@@ -308,7 +299,7 @@ def main(task : str,
                 'entropy_weight' : entropy_weight_in_use * entropy_weight},
                 global_step=epoch)
 
-    dilp.print_program(rulebook, mask(weights, rulebook), torcher.rev_dict(problem.predicates))
+    dilp.print_program(problem, mask(weights, rulebook))
     
     if validate:
         last_target = target_loss

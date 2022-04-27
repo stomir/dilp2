@@ -14,12 +14,12 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
-    -S|--slurm)
-      SRUN="srun $2"
+    -r|--run_cmd)
+      SRUN="$2"
       shift
       shift
       ;;
-    -s|--add_slurm)
+    -s|--slurm)
       SRUN="$SRUN $2"
       shift
       shift
@@ -79,7 +79,8 @@ fi
 for i in `seq -w $FROM $TO`; do
   ( 
     for t in `seq 1 $TIMES`; do
-      $SRUN -J dilp/`basename $EXAMPLE`/$i/$t/`basename $TMP` python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
+      #$SRUN -J dilp/`basename $EXAMPLE`/$i/$t/`basename $TMP` python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
+      $SRUN python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
     done
   )&
 done
@@ -98,7 +99,7 @@ OK=`results | grep "OK" | wc -l`
 ALL=`results | wc -l`
 FUZZY=`results | grep -e OK -e FUZZY | grep -v OVERFIT | wc -l`
 TRAIN=`results | grep -e OK -e OVERFIT | wc -l`
-FUZZY_OVERFIT=`results | grep -e OK -e FUZZY | wc -l`
+FUZZY_OVERFIT=`results | grep -e OK -e FUZZY -e OVERFIT | wc -l`
 echoo "all correct: $OK/$ALL"
 echoo "fuzzily correct: $FUZZY/$ALL"
 echoo "correct on training: $TRAIN/$ALL"

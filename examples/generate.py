@@ -51,11 +51,13 @@ def gen_world(atoms : Iterable, outdir : str, module):
                             continue
                         file = true_file if result else false_file
                         file.write(f"{name}({repr(a1)},{repr(a2)})\n")
-                        logging.info(f"training {name}({repr(a1)},{repr(a2)}) {result=}")
+                        logging.debug(f"target {name}({repr(a1)},{repr(a2)}) {result=}")
 
-def main(name : str, outdir : Optional[str] = None, info : bool = True):
+def main(name : str, outdir : Optional[str] = None, info : bool = True, debug : bool = False):
     if info:
         logging.getLogger().setLevel(logging.INFO)
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
 
     if name[-3:] == '.py':
         name = name[:-3]

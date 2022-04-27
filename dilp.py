@@ -9,15 +9,11 @@ from zmq import device
 import weird
 
 class Rulebook(NamedTuple):
-    body_predicates : torch.Tensor
-    variable_choices : torch.Tensor
     mask : torch.Tensor #boolean, true if rule is used
     full_rules : bool = False
 
     def to(self, device : torch.device, non_blocking : bool = True):
         return Rulebook(
-            body_predicates=self.body_predicates.to(device, non_blocking=non_blocking),
-            variable_choices=self.variable_choices.to(device, non_blocking=non_blocking),
             mask=self.mask.to(device, non_blocking=non_blocking),
             full_rules =self.full_rules
         )
@@ -103,17 +99,15 @@ def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
    
 
 def infer_single_step(ex_val : torch.Tensor, 
-        body_predicates : torch.Tensor, variable_choices : torch.Tensor,
         rule_weights : torch.Tensor, full_rules : bool = False) -> torch.Tensor:
-    logging.debug(f"{ex_val.shape=} {body_predicates.shape=} {variable_choices.shape=} {rule_weights.shape=}")
-    if not full_rules:
-        ex_val = ex_val[:, body_predicates, variable_choices]
-    else:
-        shape = list(ex_val.shape)
-        shape[1] *= shape[2]
-        del shape[2]
-        ex_val = ex_val.reshape(shape)
-        ex_val = ex_val.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+    logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
+
+    shape = list(ex_val.shape)
+    shape[1] *= shape[2]
+    del shape[2]
+    ex_val = ex_val.reshape(shape)
+    ex_val = ex_val.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+
     #rule weighing
     rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) #atoms
     rule_weights = rule_weights.unsqueeze(0) #worlds
@@ -138,19 +132,14 @@ def infer_single_step(ex_val : torch.Tensor,
 
 def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
         return_dev : torch.device, devices : Sequence[torch.device],
-        body_predicates : torch.Tensor, variable_choices : torch.Tensor,
         rule_weights : torch.Tensor,
         full_rules : bool = False,
         ) -> torch.Tensor:
-    pred_count : int = body_predicates.shape[0]
+    pred_count : int = rule_weights.shape[0]
     per_dev = math.ceil(pred_count / len(devices))
     
-    body_predicates_ : List[torch.Tensor] = []
-    variable_choices_ : List[torch.Tensor] = []
     rule_weights_ : List[torch.Tensor] = []
     for i, dev in enumerate(devices):
-        body_predicates_.append(body_predicates[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
-        variable_choices_.append(variable_choices[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
         rule_weights_.append(rule_weights[i*per_dev:(i+1)*per_dev].to(dev, non_blocking=True))
 
     val = base_val
@@ -159,8 +148,6 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
         for i, dev in enumerate(devices):
             rets.append(infer_single_step(
                 ex_val = extend_val(val.to(dev, non_blocking=True)), 
-                body_predicates = body_predicates_[i],
-                variable_choices = variable_choices_[i],
                 full_rules=full_rules,
                 rule_weights = rule_weights_[i]))
         val = disjunction2(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
@@ -174,7 +161,7 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
     #vals : List[torch.Tensor] = []
     for i in range(0, steps):
         val2 = extend_val(val, vars)
-        val2 = infer_single_step(ex_val = val2, body_predicates=rulebook.body_predicates, variable_choices=rulebook.variable_choices, \
+        val2 = infer_single_step(ex_val = val2, \
             rule_weights = weights, full_rules=rulebook.full_rules)
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         #vals.append(val2.unsqueeze(0))
@@ -192,7 +179,7 @@ def infer(base_val : torch.Tensor,
         return infer_steps(steps, base_val, rulebook, weights, 3)
     else:
         return infer_steps_on_devs(steps, base_val, weights.device, devices,
-            rulebook.body_predicates, rulebook.variable_choices, weights, full_rules=rulebook.full_rules)
+            weights, full_rules=rulebook.full_rules)
 
 def loss(values : torch.Tensor, target_type : loader.TargetType, reduce : bool = True) -> torch.Tensor:
     if target_type == loader.TargetType.POSITIVE:
@@ -214,8 +201,7 @@ def legacy_loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Te
     if devices is None:
         val = infer_steps(steps, base_val, rulebook, weights, vars)
     else:
-        val = infer_steps_on_devs(steps, base_val, devices[-1], devices,
-            rulebook.body_predicates, rulebook.variable_choices, weights)
+        val = infer_steps_on_devs(steps, base_val, devices[-1], devices, weights)
     preds = val[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]
     #return (preds - target_values).square(), preds
     return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
@@ -223,40 +209,18 @@ def legacy_loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Te
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]
 
-def rule_str(chosen_rules : List[int], clause : int, predicate : int, rulebook : Rulebook, pred_names : Dict[int,str]) -> str:
-    ret = []
-    for i, rule in enumerate(chosen_rules):
-        vs = ','.join(map(lambda v: chr(ord('A')+v), var_choices(int(rulebook.variable_choices[predicate,clause,i,rule]))))
-        ret.append(f'{pred_names[int(rulebook.body_predicates[predicate,clause,i,rule].item())]}({vs})')
-    return ','.join(ret)
+def body_pred_str(pred_name : str, variable_choice : int) -> str:
+    vs = ','.join(map(lambda v: chr(ord('A')+v), var_choices(variable_choice)))
+    return f'{pred_name}({vs})'
 
-def print_program(rulebook : Rulebook, weights : torch.Tensor, pred_names : Dict[int,str], elements : int = 1):
-    for pred, rules in enumerate(rulebook.body_predicates):
-        if rules.numel() == 0:
-            continue
-        pred_name = pred_names[pred]
-        if weights[pred].sum().item() == 0: continue
-        wei = weights[pred].detach().cpu()
-        for clause in range(0, 2):
-            values, idxs = wei[clause].sort(-1,descending=True)
-            ret = []
-            for elem in range(0, elements):
-                ret.append(rule_str([int(idxs[i][elem]) for i in range(2)], clause, pred, rulebook, pred_names) + '.')
-            print(f"{pred_name.rjust(10, ' ')}(A,B) :- " + ' '.join(x.ljust(50, ' ') for x in ret))
-
-def cut_down_rules(rulebook : Rulebook, down_to : int) -> Rulebook:
-    ret_bp = rulebook.body_predicates.detach().clone()
-    ret_vc = rulebook.variable_choices.detach().clone()
-
-    for pred in range(rulebook.body_predicates.shape[0]):
+def print_program(problem : loader.Problem, weights : torch.Tensor):
+    for pred in list(problem.targets) + list(problem.invented):
+        pred_name = problem.predicate_name[pred]
         for clause in range(2):
+            body_preds = []
             for body_pred in range(2):
-                used_rules : int = int(rulebook.mask[pred,clause,body_pred].sum().item())
-                permutation = torch.randperm(used_rules, device=ret_bp.device)
-                ret_bp[pred,clause,body_pred,:used_rules] = ret_bp[pred,clause,body_pred,:used_rules][permutation]
-
-    return Rulebook(
-        body_predicates = ret_bp[:,:,:,:down_to],
-        variable_choices = ret_vc[:,:,:,:down_to],
-        mask = rulebook.mask[:,:,:,:down_to],
-    )
+                rule_no = int(weights[pred,clause,body_pred].max(0)[1].item())
+                rule_pred = rule_no // 9
+                rule_vc = rule_no % 9
+                body_preds.append(body_pred_str(problem.predicate_name[rule_pred], rule_vc))
+            print(f"{pred_name.rjust(10, ' ')}(A,B) :- " + ','.join(body_preds))

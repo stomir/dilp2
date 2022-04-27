@@ -31,7 +31,8 @@ class TargetType(IntEnum):
     NEGATIVE = 0
 
 class Problem(NamedTuple):
-    predicates : Dict[str, int]
+    predicate_number : Dict[str, int]
+    predicate_name : Dict[int, str]
     bk : Set[int]
     #main : int
     targets : Set[int]
@@ -56,10 +57,10 @@ def load_facts(filename : str) -> Iterable[Tuple[str,str,str]]:
     for line in lines:
         logging.debug(f'loading fact {line=}')
         data = sentence.parseString(line)
-        predicate : str = data['relationship'][0]
-        args : Sequence[str] = list(data['arguments'][0])
+        predicate : str = data[0]
+        args : Sequence[str] = list(data[1:])
         if len(args) != 2:
-            raise ValueError(f'predicate arity other than 2, {fact=} {predicate=} {args=}')
+            raise ValueError(f'predicate arity other than 2, {data=} {predicate=} {args=}')
         logging.debug(f'fact loaded {(predicate, args[0], args[1])}')
         yield (predicate, args[0], args[1])
 
@@ -80,7 +81,8 @@ def load_problem(dir : str, invented_count : int) -> Problem:
 
     logging.info(f'loaded problem from {dir}')
     return Problem(
-        predicates = all_preds,
+        predicate_number = all_preds,
+        predicate_name = dict((idx, name) for name, idx in all_preds.items()),
         bk = set(all_preds[p] for p in bk),
         targets = set(all_preds[p] for p in targets),
         invented = set(all_preds[p] for p in inv_names),
@@ -92,15 +94,15 @@ def load_world(dir : str, problem : Problem, train : bool) -> World:
     atoms_set : Set[str] = set.union(*(set(f[1:]) for f in facts))
     logging.debug(f'{dir=} {atoms_set=} {facts=}')
     atoms = dict(zip(atoms_set, range(len(atoms_set))))
-    positive = list(indexify(load_facts(os.path.join(dir, 'positive.dilp')), problem.predicates, atoms))
-    negative = list(indexify(load_facts(os.path.join(dir, 'negative.dilp')), problem.predicates, atoms))
+    positive = list(indexify(load_facts(os.path.join(dir, 'positive.dilp')), problem.predicate_number, atoms))
+    negative = list(indexify(load_facts(os.path.join(dir, 'negative.dilp')), problem.predicate_number, atoms))
     assert all(head in problem.targets for head, _, _ in positive)
     assert all(head in problem.targets for head, _, _ in negative)
 
     logging.info(f'loaded world from {dir}')
     return World(
         atoms = atoms,
-        facts = list(indexify(facts, problem.predicates, atoms)),
+        facts = list(indexify(facts, problem.predicate_number, atoms)),
         positive = positive,
         negative = negative,
         dir = dir,
