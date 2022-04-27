@@ -14,8 +14,8 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
-    -r|--run_cmd)
-      SRUN="$2"
+    -S|--run_cmd)
+      SRUN="srun $2"
       shift
       shift
       ;;
@@ -80,8 +80,8 @@ set CUBLAS_WORKSPACE_CONFIG=":4096:8"
 for i in `seq -w $FROM $TO`; do
   ( 
     for t in `seq 1 $TIMES`; do
-      #$SRUN -J dilp/`basename $EXAMPLE`/$i/$t/`basename $TMP` python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
-      $SRUN python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
+      $SRUN -J dilp/`basename $EXAMPLE`/$i/$t/`basename $TMP` python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
+      #$SRUN python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
     done
   )&
 done
