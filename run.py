@@ -68,6 +68,10 @@ def main(task : str,
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    inv = int(inv)
+    steps = int(steps)
+
+
     if use_float64:
         torch.set_default_tensor_type(torch.DoubleTensor)
 
