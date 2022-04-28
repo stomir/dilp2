@@ -71,7 +71,7 @@ echoo "flags: $FLAGS"
 set CUBLAS_WORKSPACE_CONFIG=":4096:8"
 
 for i in `seq -w $FROM $TO`; do
-      $SRUN -J dilp/`basename $EXAMPLE`/$i/$t/`basename $TMP` python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
+      ( $SRUN -J dilp/`basename $EXAMPLE`/$i/`basename $TMP` python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i )&
       #$SRUN python3 run.py $EXAMPLE --seed $i $FLAGS 2> >(tee -a $TMP/$i.err 1>&2) >> $TMP/$i
 done
 wait || exit $?

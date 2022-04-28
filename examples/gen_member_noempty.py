@@ -13,8 +13,8 @@ class Validate:
         yield from wurl(10)
 
 class BK:
-    def empty(a,b):
-        return a == b and len(a) == 0
+#s    def empty(a,b):
+#        return a == b and len(a) == 0
 
     def head(a,b):
         return type(a) is tuple and a[0] == b
