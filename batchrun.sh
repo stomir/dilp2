@@ -88,7 +88,7 @@ results | tee -a $TMP/report
 OK=`results | grep "OK" | wc -l`
 ALL=`results | wc -l`
 FUZZY=`results | grep -e OK -e FUZZY | grep -v OVERFIT | wc -l`
-TRAIN=`results | grep -e OK -e OVERFIT | wc -l`
+TRAIN=`results | grep -e OK -e OVERFIT | grep -v FUZZY | wc -l`
 FUZZY_OVERFIT=`results | grep -e OK -e FUZZY -e OVERFIT | wc -l`
 echoo "all correct: $OK/$ALL"
 echoo "fuzzily correct: $FUZZY/$ALL"
