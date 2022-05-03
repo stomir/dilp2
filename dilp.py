@@ -29,45 +29,63 @@ def conjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
 
 def disjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return torch.max(a, b)
-    return a.where(a>b, b)
+def disjunction2_max_left(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
+    return a.where(a>=b, b)
+
+def disjunction2_max_even(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
+    return torch.max(a, b)
 def disjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return torch.max(a, dim=dim)[0]
 def conjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
-    #return torch.min(a, b)
-    return a.where(a<b, b)
+    return torch.min(a, b)
+    #return a.where(a<b, b)
 def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return a.min(dim=dim)[0]
 
-disjunction2 = disjunction2_max
-disjunction_dim = disjunction_dim_max
-conjunction2 = conjunction2_max
-conjunction_dim = conjunction_dim_max
+conjunction_body_pred = conjunction_dim_max
+disjunction_quantifier = disjunction_dim_max
+disjunction_steps = disjunction2_max
+disjunction_clauses = disjunction_dim_max
 
 def set_norm(norm_name : str):
-    global disjunction2, disjunction_dim, conjunction2, conjunction_dim
-    assert norm_name in {'max', 'prod', 'mixed', 'weird'}
+    global conjunction_body_pred, disjunction_quantifier, disjunction_steps, disjunction_clauses
     if norm_name == 'max':
-        disjunction2 = disjunction2_max
-        disjunction_dim = disjunction_dim_max
-        conjunction2 = conjunction2_max
-        conjunction_dim = conjunction_dim_max
+        conjunction_body_pred = conjunction_dim_max
+        disjunction_quantifier = disjunction_dim_max
+        disjunction_steps = disjunction2_max
+        disjunction_clauses = disjunction_dim_max
     elif norm_name == 'prod':
-        disjunction2 = disjunction2_prod
-        disjunction_dim = disjunction_dim_prod
-        conjunction2 = conjunction2_prod
-        conjunction_dim = conjunction_dim_prod
+        conjunction_body_pred = conjunction_dim_prod
+        disjunction_quantifier = disjunction_dim_prod
+        disjunction_steps = disjunction2_prod
+        disjunction_clauses = disjunction_dim_prod
     elif norm_name == 'mixed':
-        disjunction2 = disjunction2_max
-        disjunction_dim = disjunction_dim_max
-        conjunction2 = conjunction2_prod
-        conjunction_dim = conjunction_dim_prod
+        conjunction_body_pred = conjunction_dim_prod
+        disjunction_quantifier = disjunction_dim_max
+        disjunction_steps = disjunction2_max
+        disjunction_clauses = disjunction_dim_max
     elif norm_name == 'weird':
-        disjunction2 = weird.WeirdMax.apply #type: ignore
-        conjunction2 = weird.WeirdMin.apply #type: ignore
-        disjunction_dim = weird.WeirdMaxDim.apply #type: ignore
-        conjunction_dim = weird.WeirdMinDim.apply #type: ignore
+        conjunction_body_pred = weird.WeirdMinDim.apply #type: ignore
+        disjunction_quantifier = weird.WeirdMaxDim.apply #type: ignore
+        disjunction_steps = weird.WeirdMax.apply #type: ignore
+        disjunction_clauses = weird.WeirdMaxDim.apply #type: ignore
+    elif norm_name == 'mixed_left':
+        conjunction_body_pred = conjunction_dim_prod
+        disjunction_quantifier = disjunction_dim_max
+        disjunction_steps = disjunction2_max_left
+        disjunction_clauses = disjunction_dim_max
+    elif norm_name == 'dilp':
+        conjunction_body_pred = conjunction_dim_prod
+        disjunction_quantifier = disjunction_dim_max
+        disjunction_steps = disjunction2_prod
+        disjunction_clauses = disjunction_dim_max
+    elif norm_name == 'dilp2':
+        conjunction_body_pred = conjunction_dim_prod
+        disjunction_quantifier = disjunction_dim_max
+        disjunction_steps = disjunction2_max_left
+        disjunction_clauses = disjunction_dim_prod
     else:
-        assert False
+        assert False, f"wrong norm name {norm_name=}"
 
 def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
     i = 0
@@ -116,14 +134,14 @@ def infer_single_step(ex_val : torch.Tensor,
     ex_val = ex_val.sum(dim = -4)
     #ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
     
-    control_valve = torch.max(ex_val.detach()-1, torch.zeros(size=(), device=ex_val.device))
+    control_valve = torch.max(ex_val.detach()-1, torch.as_tensor(0.0, device=ex_val.device))
     ex_val = ex_val - control_valve
     #conjuction of body predictes
-    ex_val = conjunction_dim(ex_val, -4)
+    ex_val = conjunction_body_pred(ex_val, -4)
     #existential quantification
-    ex_val = disjunction_dim(ex_val, -1)
+    ex_val = disjunction_quantifier(ex_val, -1)
     #disjunction on clauses
-    ex_val = disjunction_dim(ex_val, -3)
+    ex_val = disjunction_clauses(ex_val, -3)
     logging.debug(f"returning {ex_val.shape=}")
    
     return ex_val
@@ -146,7 +164,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
             rets.append(infer_single_step(
                 ex_val = extend_val(val.to(dev, non_blocking=True)), 
                 rule_weights = rule_weights_[i]))
-        val = disjunction2(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
+        val = disjunction_steps(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
     
     return val
 
@@ -161,7 +179,7 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
             rule_weights = weights)
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         #vals.append(val2.unsqueeze(0))
-        val = disjunction2(val, val2)
+        val = disjunction_steps(val, val2)
     #return disjunction_dim(torch.cat(vals), 0)
     return val
 

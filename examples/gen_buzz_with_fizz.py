@@ -16,11 +16,11 @@ class BK:
     def succ(a,b):
         return a+1 == b
 
-class Targets:
     def fizz(a,b):
         if a != b: raise Skip
         return a % 3 == 0
 
+class Targets:
     def buzz(a,b):
         if a != b: raise Skip
         return a % 5 == 0

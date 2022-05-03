@@ -19,6 +19,8 @@ def call(function : Callable, a1, a2) -> Optional[bool]:
         pass
     except IndexError:
         pass
+    except KeyError:
+        pass
     return False
 
 def facts(function : Callable, name : str, atoms : Iterable) -> Iterable[str]:
@@ -68,13 +70,13 @@ def main(name : str, outdir : Optional[str] = None, info : bool = True, debug : 
     os.mkdir(outdir)
 
     for name, func in inspect.getmembers(module.Train, inspect.isfunction):
-        atoms = list(func(None))
+        atoms = list(func(module))
         dirname = os.path.join(outdir, 'train_'+name)
         logging.info(f"=== training world {name} {dirname=} {atoms=}")
         gen_world(atoms, dirname, module)
 
     for name, func in inspect.getmembers(module.Validate, inspect.isfunction):
-        atoms = list(func(None))
+        atoms = list(func(module))
         dirname = os.path.join(outdir, 'val_'+name)
         logging.info(f"=== validation world {name} {dirname=} {atoms=}")
         gen_world(atoms, dirname, module)

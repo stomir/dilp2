@@ -1,0 +1,6 @@
+adj_to_both(a,a)
+adj_to_both(e,e)
+adj_to_both(f,f)
+adj_to_both(g,g)
+adj_to_both(h,h)
+adj_to_both(i,i)
