@@ -324,7 +324,7 @@ def main(task : str,
                 devs = None
             rulebook = rulebook.to(dev, non_blocking=False)
             fuzzy = weights.detach().to(dev, non_blocking=False)
-            crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).float(), rulebook)
+            crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).to(dev).float(), rulebook)
             if validation_steps is None:
                 validation_steps = steps * 2
             for i, world in enumerate(validation_worlds):
