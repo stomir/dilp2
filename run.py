@@ -27,8 +27,8 @@ def masked_softmax(t : torch.Tensor, mask : torch.Tensor) -> torch.Tensor:
 
 def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) -> torch.Tensor:
     target_values = torch.cat([
-        torch.ones(len(batch.positive_targets)),
-        torch.zeros(len(batch.negative_targets))]).unsqueeze(1)
+        torch.ones(len(batch.positive_targets), dev=vals[0].device),
+        torch.zeros(len(batch.negative_targets), dev=vals[0].device)]).unsqueeze(1)
     
     idxs = torch.cat([batch.positive_targets.idxs, batch.negative_targets.idxs])
     other_values = [dilp.extract_targets(val, idxs).unsqueeze(1) for val in vals]
@@ -313,8 +313,6 @@ def main(task : str,
         last_target = target_loss
         last_entropy = actual_entropy.item()
         with torch.no_grad():
-            total_loss = 0.0
-            total_fuzzy = 0.0
             valid_worlds = 0
             fuzzily_valid_worlds = 0
             valid_tr_worlds = 0
@@ -331,10 +329,10 @@ def main(task : str,
                 base_val = torcher.base_val(problem, [world]).to(dev)
                 batch = torcher.targets_batch(problem, [world], dev)
                 fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy, rulebook.mask), steps=validation_steps, devices=devs)
-                fuzzy_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(fuzzy_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
+                #fuzzy_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(fuzzy_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
 
                 crisp_vals = dilp.infer(base_val, rulebook, weights = crisp, steps=validation_steps, devices=devs)
-                crisp_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(crisp_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
+                #crisp_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(crisp_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
 
                 report = report_tensor([fuzzy_vals, crisp_vals], batch)
                 fuzzy_report = report[:,1]
@@ -342,9 +340,7 @@ def main(task : str,
                 target_values = report[:,0]
                 fuzzy_acc = (fuzzy_report.round() == target_values).float().mean().item()
                 crisp_acc = (crisp_report == target_values).float().mean().item()
-                logging.info(f'world {i} {world.dir=} {fuzzy_acc=} {crisp_acc=}\n{report.numpy()}')
-                total_loss += crisp_loss.item()
-                total_fuzzy += fuzzy_loss.item()
+                logging.info(f'world {i} {world.dir=} {fuzzy_acc=} {crisp_acc=}\n{report.cpu().numpy()}')
                 if crisp_acc == 1.0:
                     valid_worlds += 1
                     if world.train:
@@ -361,8 +357,8 @@ def main(task : str,
                     '   OVERFIT   ' if valid_tr_worlds == len(train_worlds) else \
                     'FUZZY OVERFIT' if fuzzily_valid_tr_worlds == len(train_worlds) else \
                     '    FAIL     '
-            print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} {total_loss=} ' +
-                      f'{total_fuzzy=} {last_target=} {last_entropy=} {epoch=}')
+            print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} ' +
+                      f' {last_target=} {last_entropy=} {epoch=}')
     
     if output is not None:
         torch.save((weights.detach().cpu(), opt.state_dict(), epoch, entropy_enabled, entropy_weight_in_use), output)
