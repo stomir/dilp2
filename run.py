@@ -62,6 +62,7 @@ def main(task : str,
         use_float64 : bool = False,
         checkpoint : Optional[str] = None,
         validate_on_cpu : bool = True,
+        training_worlds : Optional[int] = None,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -130,6 +131,9 @@ def main(task : str,
     train_worlds = [loader.load_world(os.path.join(task, d), problem = problem, train = True) for d in dirs if d.startswith('train')]
     validation_worlds = [loader.load_world(os.path.join(task, d), problem = problem, train = False) for d in dirs if d.startswith('val')] \
                         + (train_worlds if validate_training else [])
+                        
+    if training_worlds is not None:
+        train_worlds = train_worlds[:training_worlds]
 
     worlds_batches : Sequence[torcher.WorldsBatch] = [torcher.targets_batch(problem, worlds, dev) for worlds in torcher.chunks(worlds_batch_size, train_worlds)]
     choices : Sequence[numpy.ndarray] = [numpy.concatenate([numpy.repeat(i, len(batch.targets(target_type).idxs)) for i, batch in enumerate(worlds_batches)]) for target_type in loader.TargetType]
