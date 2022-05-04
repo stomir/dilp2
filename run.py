@@ -27,8 +27,8 @@ def masked_softmax(t : torch.Tensor, mask : torch.Tensor) -> torch.Tensor:
 
 def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) -> torch.Tensor:
     target_values = torch.cat([
-        torch.ones(len(batch.positive_targets), dev=vals[0].device),
-        torch.zeros(len(batch.negative_targets), dev=vals[0].device)]).unsqueeze(1)
+        torch.ones(len(batch.positive_targets), device=vals[0].device),
+        torch.zeros(len(batch.negative_targets), device=vals[0].device)]).unsqueeze(1)
     
     idxs = torch.cat([batch.positive_targets.idxs, batch.negative_targets.idxs])
     other_values = [dilp.extract_targets(val, idxs).unsqueeze(1) for val in vals]
