@@ -328,7 +328,7 @@ def main(task : str,
             if validation_steps is None:
                 validation_steps = steps * 2
             for i, world in enumerate(validation_worlds):
-                base_val = torcher.base_val(problem, [world])
+                base_val = torcher.base_val(problem, [world]).to(dev)
                 batch = torcher.targets_batch(problem, [world], dev)
                 fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy, rulebook.mask), steps=validation_steps, devices=devs)
                 fuzzy_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(fuzzy_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
