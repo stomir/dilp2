@@ -1,0 +1,12 @@
+parent(8,9).
+parent(7,9).
+parent(6,8).
+parent(5,7).
+parent(4,7).
+parent(3,8).
+parent(2,3).
+parent(2,4).
+parent(1,3).
+parent(1,4).
+sibling(3,4).
+sibling(4,3).

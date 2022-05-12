@@ -1,7 +1,7 @@
 #!/bin/bash
 
 POSITIONAL_ARGS=()
-SRUN="srun -E -c 31 --gpus-per-node=4"
+SRUN="srun -E --gpus-per-node=1"
 FROM="1"
 KEEP=""
 TMP=""

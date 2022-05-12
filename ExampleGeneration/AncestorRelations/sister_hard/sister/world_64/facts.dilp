@@ -1,0 +1,16 @@
+mother(6,7).
+mother(3,4).
+mother(2,5).
+mother(2,6).
+father(5,7).
+father(4,6).
+father(1,4).
+father(1,5).
+daughter(6,4).
+daughter(6,2).
+son(4,3).
+son(4,1).
+son(5,2).
+son(5,1).
+son(7,6).
+son(7,5).

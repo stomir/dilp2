@@ -1,0 +1,6 @@
+auncle(3,7).
+auncle(3,9).
+auncle(4,6).
+auncle(4,9).
+auncle(8,6).
+auncle(8,7).

@@ -1,0 +1,14 @@
+mother(6,9).
+mother(5,7).
+mother(4,8).
+mother(2,3).
+mother(2,4).
+father(7,8).
+father(7,9).
+father(3,7).
+father(1,3).
+father(1,4).
+sister(4,3).
+sister(9,8).
+brother(3,4).
+brother(8,9).

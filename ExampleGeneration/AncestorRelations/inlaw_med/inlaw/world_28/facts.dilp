@@ -1,0 +1,14 @@
+husband(1,2).
+husband(4,5).
+husband(3,6).
+wife(2,1).
+wife(5,4).
+wife(6,3).
+sibling(3,4).
+sibling(4,3).
+sibling(7,8).
+sibling(7,9).
+sibling(8,7).
+sibling(8,9).
+sibling(9,7).
+sibling(9,8).

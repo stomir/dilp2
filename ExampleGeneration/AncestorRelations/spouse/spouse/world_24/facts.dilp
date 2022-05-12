@@ -1,0 +1,6 @@
+husband(1,2).
+husband(5,4).
+husband(3,6).
+wife(2,1).
+wife(4,5).
+wife(6,3).

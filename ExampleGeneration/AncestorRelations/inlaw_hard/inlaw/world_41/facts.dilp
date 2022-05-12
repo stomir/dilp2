@@ -1,0 +1,16 @@
+husband(1,2).
+husband(4,5).
+husband(7,6).
+husband(3,6).
+wife(2,1).
+wife(5,4).
+wife(6,7).
+wife(6,3).
+sister(9,8).
+brother(3,4).
+brother(3,7).
+brother(4,3).
+brother(4,7).
+brother(7,3).
+brother(7,4).
+brother(8,9).

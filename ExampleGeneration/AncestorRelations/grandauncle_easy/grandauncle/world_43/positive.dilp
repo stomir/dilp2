@@ -1,0 +1,10 @@
+grandauncle(4,9).
+grandauncle(4,12).
+grandauncle(4,13).
+grandauncle(6,8).
+grandauncle(6,11).
+grandauncle(6,12).
+grandauncle(6,13).
+grandauncle(10,8).
+grandauncle(10,9).
+grandauncle(10,11).

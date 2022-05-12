@@ -1,0 +1,13 @@
+grandniece(10,11).
+grandniece(10,12).
+grandniece(10,14).
+grandniece(10,15).
+grandniece(11,10).
+grandniece(11,13).
+grandniece(11,15).
+grandniece(14,10).
+grandniece(14,11).
+grandniece(14,12).
+grandniece(14,13).
+grandniece(14,14).
+grandniece(14,15).

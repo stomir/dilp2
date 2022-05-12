@@ -52,7 +52,7 @@ def main(task : str,
         end_early : Optional[float] = 1e-3,
         seed : Optional[int] = None,
         validate : bool = True,
-        validation_steps : Optional[int] = None,
+        validation_steps : Union[None,float,int] = None,
         validate_training : bool = True,
         worlds_batch_size : int = 1,
         devices : Optional[List[int]] = None,
@@ -322,14 +322,18 @@ def main(task : str,
             fuzzy = weights.detach().to(dev, non_blocking=False)
             crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).float(), rulebook)
             if validation_steps is None:
-                validation_steps = steps * 2
+                val_steps : int = steps * 2
+            elif type(validation_steps) is float:
+                val_steps = int(steps * validation_steps)
+            else:
+                val_steps = int(validation_steps)
             for i, world in enumerate(validation_worlds):
                 base_val = torcher.base_val(problem, [world])
                 batch = torcher.targets_batch(problem, [world], dev)
-                fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy, rulebook.mask), steps=validation_steps, devices=devs)
+                fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy, rulebook.mask), steps=val_steps, devices=devs)
                 fuzzy_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(fuzzy_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
 
-                crisp_vals = dilp.infer(base_val, rulebook, weights = crisp, steps=validation_steps, devices=devs)
+                crisp_vals = dilp.infer(base_val, rulebook, weights = crisp, steps=val_steps, devices=devs)
                 crisp_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(crisp_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
 
                 report = report_tensor([fuzzy_vals, crisp_vals], batch)

@@ -1,0 +1,8 @@
+mother(6,7).
+mother(4,5).
+mother(4,6).
+mother(2,3).
+father(5,7).
+father(3,5).
+father(3,6).
+father(1,3).

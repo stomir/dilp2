@@ -1,0 +1,7 @@
+sister(4,3).
+sister(4,4).
+sister(4,6).
+sister(6,3).
+sister(6,4).
+sister(6,6).
+sister(7,7).

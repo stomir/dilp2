@@ -1,0 +1,6 @@
+niece(7,6).
+niece(9,6).
+niece(6,7).
+niece(9,7).
+niece(6,9).
+niece(7,9).

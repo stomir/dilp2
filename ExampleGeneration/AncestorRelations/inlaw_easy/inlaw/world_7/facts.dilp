@@ -1,0 +1,12 @@
+sibling(3,4).
+sibling(4,3).
+sibling(8,9).
+sibling(9,8).
+spouse(2,1).
+spouse(1,2).
+spouse(6,3).
+spouse(7,4).
+spouse(7,5).
+spouse(3,6).
+spouse(5,7).
+spouse(4,7).
