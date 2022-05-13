@@ -46,12 +46,12 @@ def main(task : str,
         entropy_enable_threshold : Optional[float] = 1e-2,
         normalize_gradients : Optional[float] = None,
         init : str = 'normal',
-        init_size : float = 1,        
-        entropy_weight_step = 1,
+        init_size : float = 1.0,        
+        entropy_weight_step = 1.0,
         end_early : Optional[float] = 1e-3,
         seed : Optional[int] = None,
         validate : bool = True,
-        validation_steps : Union[None,float,int] = None,
+        validation_steps : Union[float,int] = 2.0,
         validate_training : bool = True,
         worlds_batch_size : int = 1,
         devices : Optional[List[int]] = None,
@@ -319,9 +319,7 @@ def main(task : str,
             rulebook = rulebook.to(dev, non_blocking=False)
             fuzzy = weights.detach().to(dev, non_blocking=False)
             crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).to(dev).float(), rulebook)
-            if validation_steps is None:
-                val_steps : int = steps * 2
-            elif type(validation_steps) is float:
+            if type(validation_steps) is float:
                 val_steps = int(steps * validation_steps)
             else:
                 val_steps = int(validation_steps)
