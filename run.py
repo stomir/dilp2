@@ -1,4 +1,3 @@
-from sqlite3 import DataError
 import fire #type: ignore
 import dilp
 import torch
@@ -113,9 +112,6 @@ def main(task : str,
         devs : Optional[List[torch.device]] = None
     else:
         devs = [torch.device(i) for i in devices]
-
-    if  inv<0:
-        raise DataError('The number of invented predicates must be >= 0')
 
     try:
         x = torch.zeros(size=(), device=dev).item()
