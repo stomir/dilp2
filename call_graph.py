@@ -38,8 +38,9 @@ def reachable(edges : Dict[str, Set[str]], a : Set[str]) -> Set[str]:
                     ret.add(v2)
     return ret
 
-def main(show_all : bool = False, target : Set[str] = set()):
+def main(show_all : bool = False, target : Set[str] = set(), show_cut_code : bool = False):
     edges : dict[str, set[str]] = {}
+    code : dict[str, List[str]] = {}
     target = set(target)
     for line in sys.stdin.readlines():
         parsed = sentence.parseString(line)
@@ -48,6 +49,9 @@ def main(show_all : bool = False, target : Set[str] = set()):
         print(f"{parsed[0]=} {parsed[4]=} {parsed[7]=}")
         if len(target) == 0:
             target = {parsed[0]}
+        if parsed[0] not in code:
+            code[parsed[0]] = []
+        code[parsed[0]].append(line)
 
     reached = reachable(edges, target)
     print(f"{target=} {edges=} {reached=}")
@@ -58,6 +62,13 @@ def main(show_all : bool = False, target : Set[str] = set()):
         for v2 in v2s:
             print(f"{v1} -> {v2}")
     print("}")
+
+    if show_cut_code:
+        for pred, lines in code.items():
+            if pred not in reached:
+                continue
+            for line in lines:
+                print(line)
 
 if __name__ == "__main__":
     fire.Fire(main)
