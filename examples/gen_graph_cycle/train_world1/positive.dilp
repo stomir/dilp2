@@ -1,0 +1,5 @@
+cyclic(a,a)
+cyclic(b,b)
+cyclic(c,c)
+cyclic(e,e)
+cyclic(f,f)
