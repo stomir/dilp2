@@ -65,7 +65,7 @@ def load_facts(filename : str) -> Iterable[Tuple[str,str,str]]:
         yield (predicate, args[0], args[1])
 
 def indexify(data : Iterable[Tuple[str,str,str]], preds : Dict[str, int], atoms : Dict[str, int]) -> Iterable[Tuple[int,int,int]]:
-    return ((preds[head], atoms[arg1], atoms[arg2]) for head, arg1, arg2 in data)
+    return ((preds[head], atoms[arg1], atoms[arg2]) for head, arg1, arg2 in data if arg1 != '_' and arg2 != '_')
 
 def load_problem(dir : str, invented_count : int) -> Problem:
     facts = list(load_facts(os.path.join(dir, 'facts.dilp')))
@@ -91,7 +91,7 @@ def load_problem(dir : str, invented_count : int) -> Problem:
 def load_world(dir : str, problem : Problem, train : bool) -> World:
     logging.debug(f'loading world from {dir}')
     facts = list(load_facts(os.path.join(dir, 'facts.dilp')))
-    atoms_set : Set[str] = set.union(*(set(f[1:]) for f in facts))
+    atoms_set : Set[str] = set.union(*(set(f[1:]) for f in facts)) - {'_'}
     logging.debug(f'{dir=} {atoms_set=} {facts=}')
     atoms = dict(zip(atoms_set, range(len(atoms_set))))
     positive = list(indexify(load_facts(os.path.join(dir, 'positive.dilp')), problem.predicate_number, atoms))

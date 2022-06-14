@@ -9,3 +9,6 @@ srun --pty -p IFItitan -c 31 python3 sample.py examples/member --inv 10 --epochs
 this mostly solves even:
 python3 sample.py examples/even --inv 5 --epochs 2000  --norm mixed --norm_weight 1 --optim adam --steps 7 --unary zero,target --cuda True --normalize_threshold 1e-2
 python3 sample.py examples/even --inv 20 --epochs 500  --norm mixed --norm_weight 1 --optim adam --steps 7 --unary zero,target --cuda True --normalize_threshold 1e-2
+
+
+apparently using an actual `false` rather than a pseudo-false (that's true for one atom) causes no problems

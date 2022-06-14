@@ -62,6 +62,8 @@ def main(task : str,
         checkpoint : Optional[str] = None,
         validate_on_cpu : bool = True,
         training_worlds : Optional[int] = None,
+        truth_loss : float = 0.0,
+        diversity_loss : float = 0.0,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -248,10 +250,17 @@ def main(task : str,
                     #ls = ls 
                     target_losses.append(one_target_loss)
 
-                logging.debug(f"{ls=} {ls.item()=}")
-                if ls.item() != 0:
-                    ls.backward()
                 assert ls >= 0
+
+                if truth_loss != 0.0:
+                    ls = ls + vals.mean(0).sum(0).mean(0).mean(0) * truth_loss
+
+                if diversity_loss != 0.0:
+                    print(f"{vals.shape=}")
+                    ls = ls + (vals.unsqueeze(2) - vals.unsqueeze(1)).square().mean(0).sum(0).mean(0).mean(0).mean(0) * diversity_loss
+                
+                if ls != 0.0:
+                    ls.backward()
                 loss_sum += ls.item()
 
                 del loss, vals, targets, preds, ls
