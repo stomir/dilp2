@@ -1,4 +1,4 @@
-import clingo
+import clingo #type: ignore
 import fire #type: ignore
 import re
 import os

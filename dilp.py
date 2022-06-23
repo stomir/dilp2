@@ -20,7 +20,7 @@ def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a + b - a * b
 def disjunction_dim_prod(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     if a.shape[dim] == 2:
-        disjunction2_prod(*a.split(1, dim=dim))
+        disjunction2_prod(*a.split(1, dim=dim)).squeeze(dim)
     return 1 - ((1 - a).prod(dim))
 def conjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a * b
@@ -46,6 +46,7 @@ conjunction_body_pred = conjunction_dim_max
 disjunction_quantifier = disjunction_dim_max
 disjunction_steps = disjunction2_max
 disjunction_clauses = disjunction_dim_max
+
 
 def set_norm(norm_name : str):
     global conjunction_body_pred, disjunction_quantifier, disjunction_steps, disjunction_clauses
@@ -79,11 +80,31 @@ def set_norm(norm_name : str):
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_prod
         disjunction_clauses = disjunction_dim_max
-    elif norm_name == 'dilp2':
+    elif norm_name == 'dilpB':
         conjunction_body_pred = conjunction_dim_prod
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max_left
         disjunction_clauses = disjunction_dim_prod
+    elif norm_name == 'dilpB2':
+        conjunction_body_pred = conjunction_dim_prod
+        disjunction_quantifier = disjunction_dim_max
+        disjunction_steps = disjunction2_max
+        disjunction_clauses = disjunction_dim_prod
+    elif norm_name == 'dilpC':
+        conjunction_body_pred = conjunction_dim_max
+        disjunction_quantifier = disjunction_dim_max
+        disjunction_steps = disjunction2_max
+        disjunction_clauses = disjunction_dim_prod
+    elif norm_name == 'davids001':
+        conjunction_body_pred = lambda a, dim: torch.min(torch.max(a.min(dim).values + a.sum(dim) - 1, torch.as_tensor(0.0, device=a.device)), torch.as_tensor(1.0, device=a.device))
+        disjunction_quantifier = disjunction_dim_max
+        disjunction_steps = disjunction2_max
+        disjunction_clauses = disjunction_dim_max
+    elif norm_name == 'sigmoid':
+        conjunction_body_pred = lambda a, dim: (a * 12 -6).sigmoid().prod(dim).square()
+        disjunction_quantifier = disjunction_dim_max
+        disjunction_steps = disjunction2_max
+        disjunction_clauses = disjunction_dim_max
     else:
         assert False, f"wrong norm name {norm_name=}"
 
@@ -143,6 +164,7 @@ def infer_single_step(ex_val : torch.Tensor,
     #disjunction on clauses
     ex_val = disjunction_clauses(ex_val, -3)
     logging.debug(f"returning {ex_val.shape=}")
+    assert len(ex_val.shape) == 1+1+1+1
    
     return ex_val
 
@@ -161,7 +183,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
     for step in range(steps):
         rets = []
         for i, dev in enumerate(devices):
-            rets.append(infer_single_step(
+            rets.append(infer_single_ste2p(
                 ex_val = extend_val(val.to(dev, non_blocking=True)), 
                 rule_weights = rule_weights_[i]))
         val = disjunction_steps(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
@@ -180,7 +202,19 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         #vals.append(val2.unsqueeze(0))
         val = disjunction_steps(val, val2)
+
     #return disjunction_dim(torch.cat(vals), 0)
+
+    ## REBALANCING
+
+    # v_mean = val.mean([-1, -2], keepdim=True)
+    # v_2 = (val - v_mean)
+    # v_max = v_2.abs().max(-1, keepdim=True).values.max(-2, keepdim=True).values
+    # logging.info(f"{v_mean.shape=} {v_max.shape=}")
+    # if (v_max == 0).sum().item() == 0:
+    #     val = (v_2 * torch.min(torch.as_tensor(1.0, device=val.device), (0.5 / v_max))) + 0.5
+    #     logging.info(f"{val.shape=} {val[0][5].shape=} {val[0][5].mean().item()=} {val[0][5].max().item()=} {val[0][5].min().item()=}")
+
     return val
 
 def infer(base_val : torch.Tensor,

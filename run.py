@@ -14,6 +14,7 @@ import loader
 import torcher
 import sys
 import traceback
+import plot
 from torch.utils.tensorboard import SummaryWriter
 
 def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
@@ -33,6 +34,10 @@ def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) ->
     other_values = [dilp.extract_targets(val, idxs).unsqueeze(1) for val in vals]
 
     return torch.cat([target_values] + other_values, dim=1)
+
+def random_init(init : str, device : torch.device, shape : Sequence[int], init_size : float) -> torch.Tensor:
+    return torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=device), std=init_size) \
+        if init == 'normal' else torch.rand([shape[0], 2, 2, shape[3]], device=device) * init_size
     
 
 def main(task : str, 
@@ -41,9 +46,10 @@ def main(task : str,
         cuda : Union[int,bool] = False, inv : int = 0,
         debug : bool = False, norm : str = 'mixed',
         entropy_weight : float = 0.0,
-        optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
+        optim : str = 'adam', lr : float = 0.05,
+        clip : Optional[float] = None,
         info : bool = False,
-        entropy_enable_threshold : Optional[float] = 1e-2,
+        entropy_enable_threshold : Optional[float] = None,
         normalize_gradients : Optional[float] = None,
         init : str = 'normal',
         init_size : float = 1.0,        
@@ -64,6 +70,10 @@ def main(task : str,
         training_worlds : Optional[int] = None,
         truth_loss : float = 0.0,
         diversity_loss : float = 0.0,
+        rerandomize : float = 0.0,
+        rerandomize_interval : int = 1,
+        plot_output : Optional[str] = None,
+        plot_interval : int = 100,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -144,8 +154,7 @@ def main(task : str,
     shape = rulebook.mask.shape
 
     assert init in {'normal', 'uniform'}
-    weights : torch.nn.Parameter = torch.nn.Parameter(torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=dev), std=init_size)) \
-        if init == 'normal' else torch.nn.Parameter(torch.rand([shape[0], 2, 2, shape[3]], device=dev) * init_size)
+    weights : torch.nn.Parameter = torch.nn.Parameter(random_init(init, device = dev, shape = shape, init_size = init_size))
     epoch : int = 0
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
@@ -289,14 +298,26 @@ def main(task : str,
                 entropy_loss = entropy_loss * entropy_weight_in_use * entropy_weight
                 entropy_loss.backward()
 
-            if clip is not None:
-                torch.nn.utils.clip_grad.clip_grad_norm_(weights, clip)
-
             target_loss = sum(target_losses) / len(target_losses)
             if end_early is not None and target_loss < end_early:
                 break
 
+            logging.info(f"{weights.grad.max()=}")
+
+            if clip is not None:
+                torch.nn.utils.clip_grad_value_([weights], clip)
+
+            logging.info(f"{weights.grad.max()=}")
+
             opt.step()
+
+            if rerandomize != 0 and (epoch-1) % int(rerandomize_interval) == 0:
+                with torch.no_grad():
+                    weights[:] = weights + random_init(init, dev, shape, init_size) * rerandomize
+
+            if plot_output is not None and (epoch-1) % int(plot_interval) == 0:
+                plot.weights_plot(weights, outdir=plot_output, epoch = epoch)
+
             #adjust_weights(weights)
         except AssertionError as e:
             weights_file : str = output + "_faulty" if output is not None else "faulty_weights"
@@ -336,6 +357,7 @@ def main(task : str,
                 base_val = torcher.base_val(problem, [world]).to(dev)
                 batch = torcher.targets_batch(problem, [world], dev)
                 fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy, rulebook.mask), steps=val_steps, devices=devs)
+                logging.info(f"{fuzzy_vals.mean()=}")
                 fuzzy_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(fuzzy_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
 
                 crisp_vals = dilp.infer(base_val, rulebook, weights = crisp, steps=val_steps, devices=devs)
