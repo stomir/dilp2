@@ -42,9 +42,11 @@ def random_init(init : str, device : torch.device, shape : Sequence[int], init_s
 
 def main(task : str, 
         epochs : int, steps : int, 
-        batch_size : Optional[Union[int, float]],
-        cuda : Union[int,bool] = False, inv : int = 0,
-        debug : bool = False, norm : str = 'mixed',
+        batch_size : float = 0.5,
+        cuda : Union[int,bool] = False,
+        inv : int = 0,
+        debug : bool = False,
+        norm : str = 'mixed',
         entropy_weight : float = 0.0,
         optim : str = 'adam', lr : float = 0.05,
         clip : Optional[float] = None,
@@ -74,6 +76,8 @@ def main(task : str,
         rerandomize_interval : int = 1,
         plot_output : Optional[str] = None,
         plot_interval : int = 100,
+        softmax_temp : float = 1.0,
+        use_final_bias : bool = False,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -155,15 +159,17 @@ def main(task : str,
 
     assert init in {'normal', 'uniform'}
     weights : torch.nn.Parameter = torch.nn.Parameter(random_init(init, device = dev, shape = shape, init_size = init_size))
+    final_bias : torch.nn.Parameter = torch.nn.Parameter(torch.ones(size = (), device = dev) * 0.0)
+    params : Sequence[torch.nn.Parameter] = [weights, final_bias]
     epoch : int = 0
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
     if optim == 'rmsprop':
-        opt : torch.optim.Optimizer = torch.optim.RMSprop([weights], lr=lr)
+        opt : torch.optim.Optimizer = torch.optim.RMSprop(params, lr=lr)
     elif optim == 'adam':
-        opt = torch.optim.Adam([weights], lr=lr)
+        opt = torch.optim.Adam(params, lr=lr)
     elif optim == 'sgd':
-        opt = torch.optim.SGD([weights], lr=lr)
+        opt = torch.optim.SGD(params, lr=lr)
     else:
         assert False
 
@@ -175,7 +181,7 @@ def main(task : str,
         with torch.no_grad():
             weights[:] = w.to(dev)
         opt.load_state_dict(opt_sd)
-        logging.info(f'loaded weights from {input}')
+        logging.info(f'loaded weights from `{input}`')
         del w, opt_sd
         
 
@@ -197,67 +203,46 @@ def main(task : str,
         try:
             target_losses : List[float] = []
             for i, batch in enumerate(worlds_batches):
-                ws = masked_softmax(weights, rulebook.mask)
+                ws = masked_softmax(weights / softmax_temp, rulebook.mask)
 
                 assert (ws < 0).sum() == 0 and (ws > 1).sum() == 0, f"{ws=} {i=}"
 
                 vals = dilp.infer(base_val = batch.base_val, rulebook = rulebook, 
                             weights = ws, steps=steps, devices = devs)
 
+                if use_final_bias:
+                    vals = dilp.disjunction2_prod(vals, final_bias.sigmoid())
+
+
                 assert (vals < 0).sum() == 0 and (vals > 1).sum() == 0, f"{(vals < 0).sum()=} {(vals > 1).sum()=} {i=} {steps=} {devices=} {vals.max()=}"
 
-                if type(batch_size) is int:
-                    assert False, "not currently supported"
-                    num_to_use_in_this_batch : Sequence[int] = [(chosen_worlds_batches_of_type == i).sum() for chosen_worlds_batches_of_type in chosen_worlds_batches]
+                ls = torch.as_tensor(0.0, device=dev)
+                one_target_loss = 0.0
+                for target_type in loader.TargetType:
+                    targets = batch.targets(target_type).idxs.to(dev, non_blocking=False)
+                    preds = dilp.extract_targets(vals, targets)
+                    loss = dilp.loss(preds, target_type, reduce=False)
 
-                    if sum(num_to_use_in_this_batch) == 0:
-                        logging.debug(f'skipped worlds batch {i} as nothing was chosen')
-                        continue
+                    one_target_loss += loss.detach().mean().item() / 2
 
-                    to_use_in_this_batch : Sequence[numpy.ndarray] = [numpy.random.choice(numpy.arange(len(batch.targets(target_type))), replace=False, size=to_choose)
-                                for target_type, to_choose in zip(loader.TargetType, num_to_use_in_this_batch)]
-
-                    ls = torch.as_tensor(0.0, device=dev)
-                    for target_type, to_use_in_this_batch_of_type in zip(loader.TargetType, to_use_in_this_batch):
-                        if len(to_use_in_this_batch_of_type) == 0:
-                            continue
-                        targets = batch.targets(target_type).idxs[torch.from_numpy(to_use_in_this_batch_of_type).to(dev, non_blocking=False)]
-                        preds = dilp.extract_targets(vals, targets)
-                        loss = dilp.loss(preds, target_type)
-                        loss = loss * (len(to_use_in_this_batch_of_type) / batch_size / 2)
-
-                        assert loss >= 0, f"{target_type=} {loss=} {preds=} {vals=}"
-
-                        ls = ls + loss
-                else:
-
-                    ls = torch.as_tensor(0.0, device=dev)
-                    one_target_loss = 0.0
-                    for target_type in loader.TargetType:
-                        targets = batch.targets(target_type).idxs.to(dev, non_blocking=False)
-                        preds = dilp.extract_targets(vals, targets)
-                        loss = dilp.loss(preds, target_type, reduce=False)
-
-                        one_target_loss += loss.detach().mean().item() / 2
-
-                        if type(batch_size) is float:
-                            chosen = chosen_per_world_batch[target_type][i]
-                            #chosen = torch.from_numpy(chosen_here).to(dev, non_blocking=False)
-                            if chosen.sum() != 0:
-                                loss = (loss.where(chosen, torch.zeros(size=(), device=loss.device)).sum()) / chosen.sum()
-                                loss = loss * int(chosen.sum().item()) / chosen_per_ttype[target_type] / 2
-                            else:
-                                loss = torch.zeros(size=(), device=loss.device)
+                    if type(batch_size) is float:
+                        chosen = chosen_per_world_batch[target_type][i]
+                        #chosen = torch.from_numpy(chosen_here).to(dev, non_blocking=False)
+                        if chosen.sum() != 0:
+                            loss = (loss.where(chosen, torch.zeros(size=(), device=loss.device)).sum()) / chosen.sum()
+                            loss = loss * int(chosen.sum().item()) / chosen_per_ttype[target_type] / 2
                         else:
-                            loss = loss.mean()
-                            loss = loss * len(batch.targets(target_type)) / all_worlds_sizes[target_type] / 2
+                            loss = torch.zeros(size=(), device=loss.device)
+                    else:
+                        loss = loss.mean()
+                        loss = loss * len(batch.targets(target_type)) / all_worlds_sizes[target_type] / 2
 
-                        assert loss >= 0, f"{target_type=} {loss=} {preds=}"
+                    assert loss >= 0, f"{target_type=} {loss=} {preds=}"
 
-                        ls = ls + loss
+                    ls = ls + loss
 
-                    #ls = ls 
-                    target_losses.append(one_target_loss)
+                #ls = ls 
+                target_losses.append(one_target_loss)
 
                 assert ls >= 0
 
@@ -272,16 +257,18 @@ def main(task : str,
                     ls.backward()
                 loss_sum += ls.item()
 
+                avg_vals = vals.mean().item()
                 del loss, vals, targets, preds, ls
                 torch.cuda.empty_cache()
             
-            # if normalize_gradients is not None:
-            #     with torch.no_grad():
-            #         for fuzzy in [weights]:
-            #             #w /= w.sum(-1, keepdim=True) * w.sign()
-            #             if fuzzy.grad is not None:
-            #                 fuzzy.grad[:] = torch.nn.functional.normalize(fuzzy.grad, dim=-1)
-            #                 fuzzy.grad *= normalize_gradients
+            if normalize_gradients is not None:
+                with torch.no_grad():
+                    for fuzzy in params:
+                        #w /= w.sum(-1, keepdim=True) * w.sign()
+                        if fuzzy.grad is not None:
+                            logging.info(f"{fuzzy.grad.norm(2)=}")
+                            fuzzy.grad[:] = torch.nn.functional.normalize(fuzzy.grad, dim=-1)
+                            fuzzy.grad *= normalize_gradients
                 
             if entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
                 entropy_enabled = True
@@ -302,12 +289,8 @@ def main(task : str,
             if end_early is not None and target_loss < end_early:
                 break
 
-            logging.info(f"{weights.grad.max()=}")
-
             if clip is not None:
                 torch.nn.utils.clip_grad_value_([weights], clip)
-
-            logging.info(f"{weights.grad.max()=}")
 
             opt.step()
 
@@ -325,15 +308,23 @@ def main(task : str,
             torch.save(weights.detach(), weights_file)
             raise e
         
-        tq.set_postfix(entropy = actual_entropy.item(), batch_loss = loss_sum, entropy_weight=entropy_weight_in_use * entropy_weight, target_loss = target_loss)
+        report = {'entropy' : actual_entropy.item(), 'batch_loss' : loss_sum, 
+                'target_loss' : target_loss,
+                'final_bias' : final_bias.sigmoid().item(),
+                'avg_val' : avg_vals,
+                #'entropy_weight' : entropy_weight_in_use * entropy_weight,
+                }
+        tq.set_postfix(**report)
         if tb is not None:
             tb.add_scalars("train", 
-                {'entropy' : actual_entropy.item(), 'batch_loss' : loss_sum, 
-                'target_loss' : target_loss,
-                'entropy_weight' : entropy_weight_in_use * entropy_weight},
+                report,
                 global_step=epoch)
 
     dilp.print_program(problem, mask(weights, rulebook))
+
+    if output is not None:
+        torch.save((weights.detach().cpu(), opt.state_dict(), epoch, entropy_enabled, entropy_weight_in_use), output)
+        logging.info(f"saved weights to `{output}`")
     
     if validate:
         last_target = target_loss
@@ -388,10 +379,6 @@ def main(task : str,
                     '    FAIL     '
             print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} ' +
                       f' {last_target=} {last_entropy=} {epoch=}')
-    
-    if output is not None:
-        torch.save((weights.detach().cpu(), opt.state_dict(), epoch, entropy_enabled, entropy_weight_in_use), output)
-        logging.info(f"saved weights to {output}")
 
     #END
 

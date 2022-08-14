@@ -5,6 +5,7 @@ from typing import *
 from dilp import Rulebook
 import logging
 import itertools
+import random
 
 class TargetSet(NamedTuple):
     value : float
@@ -97,12 +98,20 @@ def merge_mask(ts : List[torch.Tensor], dim : int = 0, newdim : int = 0) -> torc
 def chv(n : int) -> str:
     return chr(ord('A')+n)
 
+def add_invented_types(problem : Problem):
+    if (all(inv in problem.types for inv in problem.invented)):
+        return #invented types laready there
+    for inv, t in zip(sorted(problem.invented), itertools.cycle(itertools.product(problem.all_types, problem.all_types, problem.all_types))):
+        problem.types[inv] = t
+
 def rules(problem : Problem, 
             dev : torch.device,
             layers : Optional[List[int]] = None,
             unary : List[str] = [],
             recursion : bool = True, 
             invented_recursion : bool = True,
+            use_types : bool = False,
+            random_c_in_target : bool = True,
             full_rules : bool = False,
         ) -> Rulebook:
 
@@ -120,6 +129,13 @@ def rules(problem : Problem,
     #ret = -torch.ones(size=(pred_dim, 2, 2, pred_dim * 3 * 3, 2), dtype=torch.long)
 
     ret = torch.zeros(size=(pred_dim, 2, 2, pred_dim * 3 * 3), dtype=torch.bool)
+
+    if use_types:
+        add_invented_types(problem)
+
+        if random_c_in_target:
+            for target in problem.targets:
+                problem.types[target][2] = random.choice(list(problem.all_types))
 
     for head in range(pred_dim):
         if head not in problem.bk:
@@ -144,6 +160,22 @@ def rules(problem : Problem,
                             if layers is not None and head in problem.invented and p != head and p in problem.invented and layer_dict[head]+1 != layer_dict[p]: continue
 
                             if layers is not None and head == 0 and p in problem.invented and layer_dict[p] != 0: continue #main pred only calls first layer
+
+                            if use_types:
+                                logging.debug(f"{p=} {head=} {problem.predicate_name[p]=} {problem.predicate_name[head]=}")
+
+                                found_error = False
+                                for checked_var in range(3):
+                                    type_of_var = problem.types[head][checked_var]
+                                    if a == checked_var and problem.types[p][0] != type_of_var:
+                                        found_error = True
+                                        continue
+                                    if b == checked_var and problem.types[p][1] != type_of_var:
+                                        found_error = True
+                                        continue
+                                
+                                if found_error:
+                                    continue
 
                         #ret[head,clause,body_position,i] = torch.as_tensor([p, a * 3 + b])
                         ret[head,clause,body_position,i] = True

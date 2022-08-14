@@ -3,6 +3,7 @@ import torch
 import logging
 import math
 import loader
+import itertools
 from typing import *
 
 from zmq import device
@@ -109,29 +110,26 @@ def set_norm(norm_name : str):
         assert False, f"wrong norm name {norm_name=}"
 
 def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
-    i = 0
     ret = []
     shape = list(val.shape) + [val.shape[-1] for _ in range(0, vars - 2)]
     valt = val.transpose(2, 3)
-    for arg1 in range(0, vars):
-        for arg2 in range(0, vars):
-            v = val
-            if arg1 == arg2:
-                v = v.diagonal(dim1=2,dim2=3)
-                for _ in range(0, arg1):
-                    v = v.unsqueeze(2)
-                while len(v.shape) < vars+2:
-                    v = v.unsqueeze(-1)
-            else:
-                if arg2 < arg1:
-                    v = valt
-                unused = (x for x in range(0, vars) if x not in {arg1, arg2})
-                for u in unused:
-                    v = v.unsqueeze(u + 2)
-            v = torch.broadcast_to(v, shape) #type: ignore
-            v = v.unsqueeze(2)
-            ret.append(v)
-            i += 1
+    for i, (arg1, arg2) in enumerate(itertools.product(range(vars), range(vars))):
+        v = val
+        if arg1 == arg2:
+            v = v.diagonal(dim1=2,dim2=3)
+            for _ in range(0, arg1):
+                v = v.unsqueeze(2)
+            while len(v.shape) < vars+2:
+                v = v.unsqueeze(-1)
+        else:
+            if arg2 < arg1:
+                v = valt
+            unused = (x for x in range(0, vars) if x not in {arg1, arg2})
+            for u in unused:
+                v = v.unsqueeze(u + 2)
+        v = torch.broadcast_to(v, shape) #type: ignore
+        v = v.unsqueeze(2)
+        ret.append(v)
     return torch.cat(ret, dim=2)
    
 
@@ -183,7 +181,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
     for step in range(steps):
         rets = []
         for i, dev in enumerate(devices):
-            rets.append(infer_single_ste2p(
+            rets.append(infer_single_step(
                 ex_val = extend_val(val.to(dev, non_blocking=True)), 
                 rule_weights = rule_weights_[i]))
         val = disjunction_steps(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))

@@ -1,0 +1,3 @@
+even(num,num)
+zero(num,num)
+succ(num,num)

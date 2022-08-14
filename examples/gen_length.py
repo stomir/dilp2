@@ -8,7 +8,7 @@ def wurl(n : int) -> Iterable:
 class Train:
     def world1(x) -> Iterable:
         yield from range(4)
-        yield from lists([2,0,2])
+        yield from lists('aaa')
 
 class Validate:
     def world1(x) -> Iterable:

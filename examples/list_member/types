@@ -1,0 +1,3 @@
+member(list, a)
+head(list, a)
+tail(list, list)

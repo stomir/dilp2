@@ -1,0 +1,7 @@
+succ(0,1)
+succ(1,2)
+succ(2,3)
+tail(1,3)
+tail(2,0)
+tail(3,2)
+zero(0,0)

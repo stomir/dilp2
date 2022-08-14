@@ -37,6 +37,8 @@ class Problem(NamedTuple):
     #main : int
     targets : Set[int]
     invented : Set[int]
+    types : Dict[int, List[Optional[str]]]
+    all_types : Set[str]
 
 class World(NamedTuple):
     atoms : Dict[str, int]
@@ -77,7 +79,15 @@ def load_problem(dir : str, invented_count : int) -> Problem:
 
     all_preds : Dict[str, int] = {}
     inv_names = [f'inv{i}' for i in range(invented_count)]
-    all_preds.update(zip(list(bk) + list(targets) + inv_names, range(len(targets)+len(bk)+invented_count)))
+    all_preds.update(zip(list(sorted(bk)) + list(sorted(targets)) + inv_names, range(len(targets)+len(bk)+invented_count)))
+
+    types : Dict[int, Sequence[str]] = {}
+    all_types : Set[str] = set()
+    if (os.path.isfile(os.path.join(dir, '..', 'types'))):
+        for pred, type1, type2 in load_facts(os.path.join(dir, '..', 'types')):
+            types[all_preds[pred]] = [type1, type2, None]
+            all_types.add(type1)
+            all_types.add(type2)
 
     logging.info(f'loaded problem from {dir}')
     return Problem(
@@ -86,6 +96,8 @@ def load_problem(dir : str, invented_count : int) -> Problem:
         bk = set(all_preds[p] for p in bk),
         targets = set(all_preds[p] for p in targets),
         invented = set(all_preds[p] for p in inv_names),
+        types = types,
+        all_types = all_types,
     )
     
 def load_world(dir : str, problem : Problem, train : bool) -> World:
@@ -98,6 +110,7 @@ def load_world(dir : str, problem : Problem, train : bool) -> World:
     negative = list(indexify(load_facts(os.path.join(dir, 'negative.dilp')), problem.predicate_number, atoms))
     assert all(head in problem.targets for head, _, _ in positive)
     assert all(head in problem.targets for head, _, _ in negative)
+
 
     logging.info(f'loaded world from {dir}')
     return World(
