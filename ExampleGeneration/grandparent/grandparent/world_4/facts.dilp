@@ -1,6 +1,0 @@
-mother(4,5).
-mother(4,6).
-mother(3,4).
-father(2,4).
-father(1,5).
-father(1,6).

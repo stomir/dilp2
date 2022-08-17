@@ -14,7 +14,6 @@ import loader
 import torcher
 import sys
 import traceback
-import plot
 from torch.utils.tensorboard import SummaryWriter
 
 def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
@@ -53,8 +52,8 @@ def main(task : str,
         info : bool = False,
         entropy_enable_threshold : Optional[float] = None,
         normalize_gradients : Optional[float] = None,
-        init : str = 'normal',
-        init_size : float = 1.0,        
+        init : str = 'uniform',
+        init_size : float = 10.0,        
         entropy_weight_step = 1.0,
         end_early : Optional[float] = 1e-3,
         seed : Optional[int] = None,
@@ -74,8 +73,6 @@ def main(task : str,
         diversity_loss : float = 0.0,
         rerandomize : float = 0.0,
         rerandomize_interval : int = 1,
-        plot_output : Optional[str] = None,
-        plot_interval : int = 100,
         softmax_temp : float = 1.0,
         use_final_bias : bool = False,
         **rules_args):
@@ -297,11 +294,6 @@ def main(task : str,
             if rerandomize != 0 and (epoch-1) % int(rerandomize_interval) == 0:
                 with torch.no_grad():
                     weights[:] = weights + random_init(init, dev, shape, init_size) * rerandomize
-
-            if plot_output is not None and (epoch-1) % int(plot_interval) == 0:
-                plot.weights_plot(weights, outdir=plot_output, epoch = epoch)
-
-            #adjust_weights(weights)
         except AssertionError as e:
             weights_file : str = output + "_faulty" if output is not None else "faulty_weights"
             logging.error(f"assertion during backprop, saving weights to {weights_file}\n{traceback.format_exc()}")

@@ -4,27 +4,16 @@ import os.path
 import logging
 from enum import IntEnum
 
-# relationship will refer to 'track' in all of your examples
 number = pp.Word(pp.nums + '.')
 variable = pp.Word(pp.alphas + pp.nums + '_')
 relationship = variable.setResultsName('relationship', listAllMatches=True)
-# an argument to a relationship can be either a number or a variable
 argument = pp.Word(pp.alphas + pp.nums + '.' + '_')
-
-# arguments are a delimited list of 'argument' surrounded by parenthesis
 arguments = (pp.Suppress('(') + pp.delimitedList(argument) +
              pp.Suppress(')')).setResultsName('arguments', listAllMatches=True)
 
-# a fact is composed of a relationship and it's arguments
-# (I'm aware it's actually more complicated than this
-# it's just a simplifying assumption)
 fact = (relationship + arguments).setResultsName('facts', listAllMatches=True)
 
-# a sentence is a fact plus a period
 sentence = fact + pp.Optional(pp.Suppress('.'))
-
-# self explanatory
-prolog_sentences = pp.OneOrMore(sentence)
 
 class TargetType(IntEnum):
     POSITIVE = 1

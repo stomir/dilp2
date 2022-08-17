@@ -1,9 +1,0 @@
-target(3,3).
-target(6,6).
-target(9,9).
-target2(3,3).
-target2(6,6).
-target2(9,9).
-target3(3,3).
-target3(6,6).
-target3(9,9).

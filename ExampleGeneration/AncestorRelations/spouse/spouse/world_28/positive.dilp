@@ -1,6 +1,0 @@
-spouse(2,1).
-spouse(1,2).
-spouse(5,3).
-spouse(6,4).
-spouse(3,5).
-spouse(4,6).

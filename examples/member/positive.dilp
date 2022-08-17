@@ -1,8 +1,0 @@
-mem(llabcd,a).
-mem(llfcde,d).
-mem(llhgdb,g).
-mem(llhgdb,b).
-mem(llefgh,h).
-mem(llabcd,d).
-mem(llfcde,f).
-mem(llefgh,e).
