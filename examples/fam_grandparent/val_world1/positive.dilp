@@ -1,0 +1,6 @@
+grandparent(g,a)
+grandparent(j,b)
+grandparent(d,b)
+grandparent(c,a)
+grandparent(f,a)
+grandparent(h,a)

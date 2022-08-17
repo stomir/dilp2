@@ -1,0 +1,8 @@
+dad(a,c)
+dad(a,b)
+dad(b,d)
+dad(b,e)
+mom(c,g)
+mom(c,f)
+mom(i,a)
+mom(f,h)
