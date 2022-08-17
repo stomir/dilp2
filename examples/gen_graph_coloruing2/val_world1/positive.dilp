@@ -1,5 +1,5 @@
-wrong(d,d)
-wrong(g,g)
 wrong(f,f)
-wrong(c,c)
+wrong(d,d)
 wrong(b,b)
+wrong(c,c)
+wrong(g,g)

@@ -33,15 +33,15 @@ class Train:
         yield red
         yield green
 
-    def world3(x) -> Iterable:
-        x.data = Wurl(
-            colors = {'a': green, 'b': red,'c': red,'d': green, 'e':green, 'f':red},
-            edges = {'a': {'e'}, 'b': {'d'}, 'c':set(), 'd': {'c'}, 'e':{'d'}, 'f':{'c'}}
+    # def world3(x) -> Iterable:
+    #     x.data = Wurl(
+    #         colors = {'a': green, 'b': red,'c': red,'d': green, 'e':green, 'f':red},
+    #         edges = {'a': {'e'}, 'b': {'d'}, 'c':set(), 'd': {'c'}, 'e':{'d'}, 'f':{'c'}}
 
-        )
-        yield from x.data.colors.keys()
-        yield red
-        yield green
+    #     )
+    #     yield from x.data.colors.keys()
+    #     yield red
+    #     yield green
 
     # def world3(x) -> Iterable:
     #     x.data = Wurl(
