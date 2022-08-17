@@ -1,4 +1,3 @@
-wrong(c,c)
-wrong(a,a)
-wrong(b,b)
 wrong(d,d)
+wrong(c,c)
+wrong(b,b)

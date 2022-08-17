@@ -43,20 +43,30 @@ class Train:
         yield red
         yield green
 
-    def world3(x) -> Iterable:
+    # def world3(x) -> Iterable:
+    #     x.data = Wurl(
+    #         colors = {'a': green, 'b': red,'c': red,'d': green, 'e':green, 'f':red},
+    #         edges = {'a': {'b','c'}, 'b': {'d'}, 'c':set(), 'd': {'c','f'}, 'e':{'d'}, 'f':{'c'}}
+
+    #     )
+    #     yield from x.data.colors.keys()
+    #     yield red
+    #     yield green
+        
+    def world4(x) -> Iterable:
         x.data = Wurl(
-            colors = {'a': green, 'b': red,'c': red,'d': green, 'e':green, 'f':red},
-            edges = {'a': {'b','c'}, 'b': {'d'}, 'c':set(), 'd': {'c','f'}, 'e':{'d'}, 'f':{'c'}}
+            colors = {'a': green, 'b': red,}, #'d': green, 'e':green, 'f':red},
+            edges = {'a': {'b'}, 'b' : set()}
 
         )
         yield from x.data.colors.keys()
         yield red
         yield green
         
-    def world4(x) -> Iterable:
+    def world5(x) -> Iterable:
         x.data = Wurl(
-            colors = {'a': green, 'b': red, 'c': red, 'd': red}, #'d': green, 'e':green, 'f':red},
-            edges = {'a': {'b'}, 'b' : set(), 'c': {'d'}, 'd':set()}
+            colors = {'a': green, 'b': green,}, #'d': green, 'e':green, 'f':red},
+            edges = {'a': {'b'}, 'b' : set()}
 
         )
         yield from x.data.colors.keys()
