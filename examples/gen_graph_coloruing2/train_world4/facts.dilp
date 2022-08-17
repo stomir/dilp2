@@ -1,0 +1,6 @@
+color(c,red)
+color(a,green)
+color(b,red)
+color(d,red)
+edge(c,d)
+edge(a,b)
