@@ -310,10 +310,11 @@ def main(task : str,
         
         report = {'entropy' : actual_entropy.item(), 'batch_loss' : loss_sum, 
                 'target_loss' : target_loss,
-                'final_bias' : final_bias.sigmoid().item(),
                 'avg_val' : avg_vals,
                 #'entropy_weight' : entropy_weight_in_use * entropy_weight,
                 }
+        if use_final_bias:
+            report['final_bias'] = final_bias.sigmoid().item()
         tq.set_postfix(**report)
         if tb is not None:
             tb.add_scalars("train", 
