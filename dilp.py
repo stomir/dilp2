@@ -43,6 +43,17 @@ def conjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
 def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return a.min(dim=dim)[0]
 
+def conjuction_dim_yager(p : float) -> Callable[[torch.Tensor, int], torch.Tensor]:
+    def yager(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+        return torch.min(torch.as_tensor(1.0, device=a.device), a.pow(p).sum(dim).pow(1/p))
+    return yager
+
+def generalized_mean(p : float) -> Callable[[torch.Tensor, int], torch.Tensor]:
+    def gm(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
+        return a.pow(p).mean(dim=dim).pow(1/p)
+    return gm
+    
+
 conjunction_body_pred = conjunction_dim_max
 disjunction_quantifier = disjunction_dim_max
 disjunction_steps = disjunction2_max
@@ -106,6 +117,11 @@ def set_norm(norm_name : str):
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max
         disjunction_clauses = disjunction_dim_max
+    elif norm_name == 'krieken':
+        conjunction_body_pred = conjunction_dim_prod
+        disjunction_quantifier = generalized_mean(p = 1.5)
+        disjunction_steps = disjunction2_prod
+        disjunction_clauses = disjunction_dim_prod
     else:
         assert False, f"wrong norm name {norm_name=}"
 
