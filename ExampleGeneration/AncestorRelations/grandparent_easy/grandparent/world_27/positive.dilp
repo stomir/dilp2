@@ -1,9 +1,0 @@
-grandparent(2,6).
-grandparent(1,6).
-grandparent(5,7).
-grandparent(4,7).
-grandparent(2,7).
-grandparent(1,7).
-grandparent(5,9).
-grandparent(4,9).
-grandparent(1,9).

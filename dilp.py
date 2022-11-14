@@ -43,7 +43,7 @@ def conjunction2_max(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
 def conjunction_dim_max(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
     return a.min(dim=dim)[0]
 
-def conjuction_dim_yager(p : float) -> Callable[[torch.Tensor, int], torch.Tensor]:
+def conjunction_dim_yager(p : float) -> Callable[[torch.Tensor, int], torch.Tensor]:
     def yager(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
         return torch.min(torch.as_tensor(1.0, device=a.device), a.pow(p).sum(dim).pow(1/p))
     return yager
@@ -54,13 +54,12 @@ def generalized_mean(p : float) -> Callable[[torch.Tensor, int], torch.Tensor]:
     return gm
     
 
-conjunction_body_pred = conjunction_dim_max
-disjunction_quantifier = disjunction_dim_max
-disjunction_steps = disjunction2_max
-disjunction_clauses = disjunction_dim_max
+conjunction_body_pred : Callable[[torch.Tensor, int], torch.Tensor] = conjunction_dim_max
+disjunction_quantifier : Callable[[torch.Tensor, int], torch.Tensor] = disjunction_dim_max
+disjunction_steps : Callable[[torch.Tensor, torch.Tensor], torch.Tensor]  = disjunction2_max
+disjunction_clauses : Callable[[torch.Tensor, int], torch.Tensor] = disjunction_dim_max
 
-
-def set_norm(norm_name : str):
+def set_norm(norm_name : str, p : float):
     global conjunction_body_pred, disjunction_quantifier, disjunction_steps, disjunction_clauses
     if norm_name == 'max':
         conjunction_body_pred = conjunction_dim_max
@@ -118,7 +117,7 @@ def set_norm(norm_name : str):
         disjunction_steps = disjunction2_max
         disjunction_clauses = disjunction_dim_max
     elif norm_name == 'krieken':
-        conjunction_body_pred = conjunction_dim_prod
+        conjunction_body_pred = conjunction_dim_yager(p = p)
         disjunction_quantifier = generalized_mean(p = 1.5)
         disjunction_steps = disjunction2_prod
         disjunction_clauses = disjunction_dim_prod
@@ -216,19 +215,6 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         #vals.append(val2.unsqueeze(0))
         val = disjunction_steps(val, val2)
-
-    #return disjunction_dim(torch.cat(vals), 0)
-
-    ## REBALANCING
-
-    # v_mean = val.mean([-1, -2], keepdim=True)
-    # v_2 = (val - v_mean)
-    # v_max = v_2.abs().max(-1, keepdim=True).values.max(-2, keepdim=True).values
-    # logging.info(f"{v_mean.shape=} {v_max.shape=}")
-    # if (v_max == 0).sum().item() == 0:
-    #     val = (v_2 * torch.min(torch.as_tensor(1.0, device=val.device), (0.5 / v_max))) + 0.5
-    #     logging.info(f"{val.shape=} {val[0][5].shape=} {val[0][5].mean().item()=} {val[0][5].max().item()=} {val[0][5].min().item()=}")
-
     return val
 
 def infer(base_val : torch.Tensor,

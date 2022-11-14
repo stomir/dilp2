@@ -27,7 +27,7 @@ def add_edge(edges : Dict[str, Set[str]], a : str, b : str):
     edges[a].add(b)
 
 def reachable(edges : Dict[str, Set[str]], a : Set[str]) -> Set[str]:
-    ret : set[str] = a
+    ret : Set[str] = a
     queue : List[str] = list(a)
     while len(queue) != 0:
         v = queue.pop()
@@ -39,8 +39,8 @@ def reachable(edges : Dict[str, Set[str]], a : Set[str]) -> Set[str]:
     return ret
 
 def main(show_all : bool = False, target : Set[str] = set(), show_cut_code : bool = False):
-    edges : dict[str, set[str]] = {}
-    code : dict[str, List[str]] = {}
+    edges : Dict[str, Set[str]] = {}
+    code : Dict[str, List[str]] = {}
     target = set(target)
     for line in sys.stdin.readlines():
         parsed = sentence.parseString(line)

@@ -102,7 +102,7 @@ def add_invented_types(problem : Problem):
     if (all(inv in problem.types for inv in problem.invented)):
         return #invented types laready there
     for inv, t in zip(sorted(problem.invented), itertools.cycle(itertools.product(problem.all_types, problem.all_types, problem.all_types))):
-        problem.types[inv] = t
+        problem.types[inv] = list(t)
 
 def rules(problem : Problem, 
             dev : torch.device,

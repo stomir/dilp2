@@ -41,7 +41,7 @@ class Train:
         yield red
         yield green
 
-    def world3(x) -> Iterable:
+    def world4(x) -> Iterable:
         x.data = Wurl(
             colors = {'a': green, 'b': red,'c': red,'d': green, 'e':green, 'f':red},
             edges = {'a': {'b','c'}, 'b': {'d'}, 'c':set(), 'd': {'c','f'}, 'e':{'d'}, 'f':{'c'}}

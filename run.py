@@ -78,6 +78,7 @@ def main(task : str,
         plot_interval : int = 100,
         softmax_temp : float = 1.0,
         use_final_bias : bool = False,
+        norm_p : float = 1.0,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -114,7 +115,7 @@ def main(task : str,
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed) #type: ignore
 
-    dilp.set_norm(norm)
+    dilp.set_norm(norm, p = norm_p)
     dev = torch.device(cuda if type(cuda) == int else 0) if cuda else torch.device('cpu')
 
     logging.info(f'{dev=}')
@@ -339,8 +340,8 @@ def main(task : str,
                 dev = torch.device('cpu')
                 devs = None
             rulebook = rulebook.to(dev, non_blocking=False)
-            fuzzy = weights.detach().to(dev, non_blocking=False)
-            crisp = mask(torch.nn.functional.one_hot(fuzzy.max(-1)[1], fuzzy.shape[-1]).to(dev).float(), rulebook)
+            fuzzy_p : torch.Tensor = weights.detach().to(dev, non_blocking=False)
+            crisp = mask(torch.nn.functional.one_hot(fuzzy_p.max(-1)[1], fuzzy_p.shape[-1]).to(dev).float(), rulebook)
             if type(validation_steps) is float:
                 val_steps = int(steps * validation_steps)
             else:
@@ -348,20 +349,20 @@ def main(task : str,
             for i, world in enumerate(validation_worlds):
                 base_val = torcher.base_val(problem, [world]).to(dev)
                 batch = torcher.targets_batch(problem, [world], dev)
-                fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy, rulebook.mask), steps=val_steps, devices=devs)
+                fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy_p, rulebook.mask), steps=val_steps, devices=devs)
                 logging.info(f"{fuzzy_vals.mean()=}")
                 fuzzy_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(fuzzy_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
 
                 crisp_vals = dilp.infer(base_val, rulebook, weights = crisp, steps=val_steps, devices=devs)
                 crisp_loss : torch.Tensor = sum((dilp.loss(dilp.extract_targets(crisp_vals, batch.targets(target_type).idxs), target_type) for target_type in loader.TargetType), start=torch.as_tensor(0.0))
 
-                report = report_tensor([fuzzy_vals, crisp_vals], batch)
-                fuzzy_report = report[:,1]
-                crisp_report = report[:,2]
-                target_values = report[:,0]
+                report_t = report_tensor([fuzzy_vals, crisp_vals], batch)
+                fuzzy_report = report_t[:,1]
+                crisp_report = report_t[:,2]
+                target_values = report_t[:,0]
                 fuzzy_acc = (fuzzy_report.round() == target_values).float().mean().item()
                 crisp_acc = (crisp_report == target_values).float().mean().item()
-                logging.info(f'world {i} {world.dir=} {fuzzy_acc=} {crisp_acc=}\n{report.cpu().numpy()}')
+                logging.info(f'world {i} {world.dir=} {fuzzy_acc=} {crisp_acc=}\n{report_t.cpu().numpy()}')
                 if crisp_acc == 1.0:
                     valid_worlds += 1
                     if world.train:
@@ -381,8 +382,6 @@ def main(task : str,
             print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} ' +
                       f' {last_target=} {last_entropy=} {epoch=}')
 
-    #END
-
 def adjust_weights(weights : List[torch.nn.Parameter]):
     with torch.no_grad():
             for w in weights:
@@ -399,6 +398,7 @@ def norm_loss(weights : torch.Tensor) -> torch.Tensor:
     x = (x.softmax(-1) * x.log_softmax(-1))
     #x = (x * x.log())
     return -x.sum()
+
 
 if __name__ == "__main__":
     fire.Fire(main)

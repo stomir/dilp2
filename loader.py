@@ -81,7 +81,7 @@ def load_problem(dir : str, invented_count : int) -> Problem:
     inv_names = [f'inv{i}' for i in range(invented_count)]
     all_preds.update(zip(list(sorted(bk)) + list(sorted(targets)) + inv_names, range(len(targets)+len(bk)+invented_count)))
 
-    types : Dict[int, Sequence[str]] = {}
+    types : Dict[int, List[Optional[str]]] = {}
     all_types : Set[str] = set()
     if (os.path.isfile(os.path.join(dir, '..', 'types'))):
         for pred, type1, type2 in load_facts(os.path.join(dir, '..', 'types')):

@@ -19,7 +19,7 @@ class BK:
     def true1(a,b):
         return True
 
-    def true1(a,b):
+    def true2(a,b):
         return True
 
 class Targets:
