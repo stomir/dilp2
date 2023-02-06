@@ -5,17 +5,11 @@ import math
 import loader
 import itertools
 from typing import *
+from loader import Problem
+from torcher import WorldsBatch, TargetSet, TargetType, Rulebook
 
 from zmq import device
 import weird
-
-class Rulebook(NamedTuple):
-    mask : torch.Tensor #boolean, true if rule is used
-
-    def to(self, device : torch.device, non_blocking : bool = True):
-        return Rulebook(
-            mask=self.mask.to(device, non_blocking=non_blocking)
-        )
 
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
     return a + b - a * b
@@ -106,21 +100,16 @@ def set_norm(norm_name : str, p : float):
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max
         disjunction_clauses = disjunction_dim_prod
-    elif norm_name == 'davids001':
-        conjunction_body_pred = lambda a, dim: torch.min(torch.max(a.min(dim).values + a.sum(dim) - 1, torch.as_tensor(0.0, device=a.device)), torch.as_tensor(1.0, device=a.device))
-        disjunction_quantifier = disjunction_dim_max
-        disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction_dim_max
     elif norm_name == 'sigmoid':
         conjunction_body_pred = lambda a, dim: (a * 12 -6).sigmoid().prod(dim).square()
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max
         disjunction_clauses = disjunction_dim_max
     elif norm_name == 'krieken':
-        conjunction_body_pred = conjunction_dim_yager(p = p)
-        disjunction_quantifier = generalized_mean(p = 1.5)
-        disjunction_steps = disjunction2_prod
-        disjunction_clauses = disjunction_dim_prod
+        conjunction_body_pred = conjunction_dim_prod
+        disjunction_quantifier = generalized_mean(p = 20)
+        disjunction_steps = disjunction2_max
+        disjunction_clauses = disjunction_dim_max
     else:
         assert False, f"wrong norm name {norm_name=}"
 
@@ -146,30 +135,67 @@ def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
         v = v.unsqueeze(2)
         ret.append(v)
     return torch.cat(ret, dim=2)
-   
 
-def infer_single_step(ex_val : torch.Tensor, 
-        rule_weights : torch.Tensor) -> torch.Tensor:
-    logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
+def heuristic_weighing(vals : torch.Tensor, weights : torch.Tensor, num_samples : int) -> torch.Tensor:
 
-    shape = list(ex_val.shape)
+
+    squeezed_weights = weights.view([-1, weights.shape[-1]])
+    logging.debug(f"{weights.shape=} {squeezed_weights.shape=}")
+    chosen = torch.multinomial(squeezed_weights, num_samples = num_samples, replacement=False)
+    chosen_shape = list(weights.shape)
+    chosen_shape[-1] = -1
+    chosen = chosen.view(chosen_shape)
+    logging.debug(f"{vals.shape=}")
+    chosen_weights = torch.gather(weights, dim = -1, index = chosen)
+    logging.debug(f"{weights.shape=} {chosen.shape=} {chosen_weights.shape=}")
+    gradient_one = chosen_weights / chosen_weights.detach()
+    gradient_one = gradient_one.unsqueeze(0).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+    
+    #merge var choices into one dim
+    shape = list(vals.shape)
     shape[1] *= shape[2]
     del shape[2]
-    ex_val = ex_val.reshape(shape)
-    ex_val = ex_val.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+    vals = vals.view(shape)
+
+    logging.debug(f"{vals.shape=} {chosen.shape=} {gradient_one.shape=}")
+    vals = vals[:,chosen]
+    logging.debug(f"{vals.shape=} after chosing")
+    vals = vals * gradient_one
+    vals = vals.mean(-4)
+    
+    return vals
+
+def infer_single_step(ex_val : torch.Tensor, 
+        rule_weights : torch.Tensor,
+        num_samples : int = 0,
+        ) -> torch.Tensor:
+    logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
+
+  
 
     #rule weighing
-    rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) #atoms
-    rule_weights = rule_weights.unsqueeze(0) #worlds
-    ex_val = ex_val#.unsqueeze(-5).unsqueeze(-5)
+    
     logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
-    ex_val = ex_val * rule_weights
-     
-    ex_val = ex_val.sum(dim = -4)
+    if num_samples != 0:
+        ex_val = heuristic_weighing(ex_val, rule_weights, num_samples = num_samples)
+    else:
+        rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) #atoms
+        rule_weights = rule_weights.unsqueeze(0) #worlds
+        
+        shape = list(ex_val.shape)
+        shape[1] *= shape[2]
+        del shape[2]
+        ex_val = ex_val.reshape(shape)
+        ex_val = ex_val.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+
+        ex_val = ex_val#.unsqueeze(-5).unsqueeze(-5)
+        ex_val = ex_val * rule_weights 
+        ex_val = ex_val.sum(dim = -4)
     #ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
     
     control_valve = torch.max(ex_val.detach()-1, torch.as_tensor(0.0, device=ex_val.device))
     ex_val = ex_val - control_valve
+
     #conjuction of body predictes
     ex_val = conjunction_body_pred(ex_val, -4)
     #existential quantification
@@ -178,6 +204,8 @@ def infer_single_step(ex_val : torch.Tensor,
     ex_val = disjunction_clauses(ex_val, -3)
     logging.debug(f"returning {ex_val.shape=}")
     assert len(ex_val.shape) == 1+1+1+1
+
+    #ex_val = weird.WeirdMin1.apply(ex_val, torch.as_tensor(1.0, device=ex_val.device))
    
     return ex_val
 
@@ -197,7 +225,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
         rets = []
         for i, dev in enumerate(devices):
             rets.append(infer_single_step(
-                ex_val = extend_val(val.to(dev, non_blocking=True)), 
+                ex_val = extend_val(val.to(dev, non_blocking=True)),
                 rule_weights = rule_weights_[i]))
         val = disjunction_steps(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
     
@@ -205,13 +233,26 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
 
 
 
-def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, vars : int = 3) -> torch.Tensor:
+def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, 
+            problem : Problem,
+            num_samples = 0,
+            vars : int = 3) -> torch.Tensor:
     val = base_val
+    #non-bk weights
+
+    weights = weights[len(problem.bk):]
+    bk_zeros = torch.zeros([val.shape[0], len(problem.bk), val.shape[2], val.shape[3]], device = val.device)
+
     #vals : List[torch.Tensor] = []
     for i in range(0, steps):
         val2 = extend_val(val, vars)
         val2 = infer_single_step(ex_val = val2, \
-            rule_weights = weights)
+            rule_weights = weights, num_samples=num_samples)
+        val2 = torch.cat([bk_zeros, val2], dim=1)
+        
+        #weird grad norm
+        #val2 = weird.WeirdNorm.apply(val2, (0,1,2))
+        
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         #vals.append(val2.unsqueeze(0))
         val = disjunction_steps(val, val2)
@@ -220,39 +261,52 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
 def infer(base_val : torch.Tensor,
             rulebook : Rulebook,
             weights : torch.Tensor,
+            problem : Problem,
             steps : int,
+            num_samples : int,
             devices : Optional[Sequence[torch.device]] = None,
             ) -> torch.Tensor:
     if devices is None:
-        return infer_steps(steps, base_val, rulebook, weights, 3)
+        return infer_steps(steps, base_val, rulebook, weights, problem, num_samples = num_samples, vars = 3)
     else:
         return infer_steps_on_devs(steps, base_val, weights.device, devices,
             weights)
 
-def loss(values : torch.Tensor, target_type : loader.TargetType, reduce : bool = True) -> torch.Tensor:
+def loss_value(values : torch.Tensor, target_type : loader.TargetType, reduce : bool = True) -> torch.Tensor:
     if target_type == loader.TargetType.POSITIVE:
+        #values = weird.weirdMin1(values, torch.as_tensor(1.0, device=values.device, dtype=values.dtype))
         ret = -(values + 1e-10).log()
         if reduce:
             ret = ret.mean()
         return ret
     else:
-        return loss(1-values, target_type=loader.TargetType.POSITIVE, reduce=reduce)
+        return loss_value(1-values, target_type=loader.TargetType.POSITIVE, reduce=reduce)
 
-def extract_targets(vals : torch.Tensor, targets : torch.Tensor) -> torch.Tensor:
+base_filter = filter
+def extract_targets(vals : torch.Tensor, targets : torch.Tensor, filter : Optional[Callable[[Tuple[int,int,int]], bool]] = None) -> torch.Tensor:
+    if filter is not None:
+        targets = list(base_filter(filter, targets)) #type: ignore
     return vals[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]
 
-def legacy_loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
-        targets : torch.Tensor,
-        target_values : torch.Tensor, steps : int, 
-        devices : Optional[Sequence[torch.device]] = None,
-        vars : int = 3) -> Tuple[torch.Tensor, torch.Tensor]:
-    if devices is None:
-        val = infer_steps(steps, base_val, rulebook, weights, vars)
-    else:
-        val = infer_steps_on_devs(steps, base_val, devices[-1], devices, weights)
-    preds = val[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]
-    #return (preds - target_values).square(), preds
-    return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
+def loss(vals : torch.Tensor, batch : WorldsBatch, filter : Optional[Callable[[Tuple[int,int,int]], bool]] = None) -> torch.Tensor:
+    pos = extract_targets(vals, batch.positive_targets.idxs, filter = filter)
+    neg = extract_targets(vals, batch.negative_targets.idxs, filter = filter)
+    pos = loss_value(values = pos, target_type = TargetType.POSITIVE, reduce=True)
+    neg = loss_value(values = neg, target_type = TargetType.NEGATIVE, reduce=True)
+    return (pos + neg) / 2
+
+# def legacy_loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
+#         targets : torch.Tensor,
+#         target_values : torch.Tensor, steps : int, 
+#         devices : Optional[Sequence[torch.device]] = None,
+#         ) -> Tuple[torch.Tensor, torch.Tensor]:
+#     if devices is None:
+#         val = infer_steps(steps, base_val, rulebook, weights)
+#     else:
+#         val = infer_steps_on_devs(steps, base_val, devices[-1], devices, weights)
+#     preds = val[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]
+#     #return (preds - target_values).square(), preds
+#     return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
 
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]

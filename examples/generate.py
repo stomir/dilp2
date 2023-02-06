@@ -21,6 +21,8 @@ def call(function : Callable, a1, a2) -> Optional[bool]:
         pass
     except KeyError:
         pass
+    except AttributeError:
+        pass
     return False
 
 def facts(function : Callable, name : str, atoms : Iterable) -> Iterable[str]:

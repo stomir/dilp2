@@ -7,7 +7,7 @@ tab () {
 
 cat $1/report | head -n 4
 
-for arg in `echo $@ | python3 -m natsort`; do
+for arg in `echo $@ | /usr/bin/python3 -m natsort`; do
     LINE=`basename $arg`
     echo -e -n "$LINE\t"
     tab $arg "all correct"

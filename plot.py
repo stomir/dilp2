@@ -26,6 +26,6 @@ def weights_plot(weights : torch.Tensor, outdir : str, epoch : int):
             mkdir(outdir, f"p{p}", f"clause{clause}")
             for body_pred in range(2):
                 mkdir(outdir, f"p{p}", f"clause{clause}", f"bp{body_pred}")
-                line_plot(data = weights[p][clause][body_pred].detach().sort().values,
+                line_plot(data = weights[p][clause][body_pred].detach().sort()[0],
                             file = os.path.join(outdir, f"p{p}", f"clause{clause}", f"bp{body_pred}", f"e{epoch:010}"),
                             label = f"epoch {epoch}")

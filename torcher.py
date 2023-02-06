@@ -2,14 +2,16 @@ from numpy import positive
 import torch
 from loader import Problem, World, rev_dict, TargetType
 from typing import *
-from dilp import Rulebook
 import logging
 import itertools
 import random
+import numpy
+
+base_filter = filter
 
 class TargetSet(NamedTuple):
     value : float
-    idxs : torch.Tensor
+    idxs : torch.Tensor # world, predicate, x, y
 
     def to(self, device : torch.device) -> 'TargetSet':
         return TargetSet(
@@ -19,6 +21,13 @@ class TargetSet(NamedTuple):
 
     def __len__(self) -> int:
         return len(self.idxs)
+    
+    def filter(self, f : Callable[[Sequence[int]], bool]) -> 'TargetSet':
+        idxs = self.idxs.cpu().numpy()
+        return TargetSet(
+            value = self.value,
+            idxs = torch.from_numpy(idxs[numpy.array([f(t) for t in idxs])]).to(self.idxs.device)
+        )
 
 class WorldsBatch(NamedTuple):
     base_val : torch.Tensor
@@ -37,6 +46,21 @@ class WorldsBatch(NamedTuple):
             positive_targets = self.positive_targets.to(device),
             negative_targets = self.negative_targets.to(device)
         )
+        
+    def filter(self, f : Callable[[Sequence[int]], bool]) -> 'WorldsBatch':
+        return WorldsBatch(
+            base_val=self.base_val,
+            positive_targets=self.positive_targets.filter(f),
+            negative_targets=self.negative_targets.filter(f)
+        )
+        
+class Rulebook(NamedTuple):
+    mask : torch.Tensor #boolean, true if rule is used
+
+    def to(self, device : torch.device, non_blocking : bool = True):
+        return Rulebook(
+            mask=self.mask.to(device, non_blocking=non_blocking)
+        )
 
 T = TypeVar('T')
 
@@ -44,12 +68,14 @@ def chunks(n : int, seq : Sequence[T]) -> Iterable[Sequence[T]]:
     for i in range(0, len(seq), n):
         yield seq[i:i+n]
 
-def base_val(problem : Problem, worlds : Sequence[World]) -> torch.Tensor:
+def base_val(problem : Problem, worlds : Sequence[World], dtype) -> torch.Tensor:
     atom_count = max(len(w.atoms) for w in worlds)
-    ret = torch.zeros(size = [len(worlds), len(problem.predicate_name), atom_count, atom_count], dtype = torch.float)
+    ret = torch.zeros(size = [len(worlds), len(problem.predicate_name), atom_count, atom_count], dtype = dtype)
     for i, world in enumerate(worlds):
         for fact in world.facts:
             ret[i][fact] = 1.0
+        if '$true' in problem.predicate_number:
+            ret[i][problem.predicate_number['$true']] = 1.0
     return ret
 
 def targets_iter(worlds : Sequence[World], target_type : TargetType) -> Iterable[Sequence[int]]:
@@ -61,11 +87,11 @@ def targets_iter(worlds : Sequence[World], target_type : TargetType) -> Iterable
 def targets(worlds : Sequence[World], target_type : TargetType) -> torch.Tensor:
     return torch.as_tensor(list(targets_iter(worlds, target_type)), dtype=torch.long)
 
-def targets_batch(problem : Problem, worlds : Sequence[World], device : torch.device) -> WorldsBatch:
+def targets_batch(problem : Problem, worlds : Sequence[World], device : torch.device, dtype) -> WorldsBatch:
     positive_targets = targets(worlds, TargetType.POSITIVE)
     negative_targets = targets(worlds, TargetType.NEGATIVE)
     return WorldsBatch(
-        base_val = base_val(problem, worlds).to(device),
+        base_val = base_val(problem, worlds, dtype = dtype).to(device),
         positive_targets = TargetSet(
             value = 1.0,
             idxs = positive_targets.to(device)
@@ -113,6 +139,7 @@ def rules(problem : Problem,
             use_types : bool = False,
             random_c_in_target : bool = True,
             full_rules : bool = False,
+            allow_cross_targets : bool = True,
         ) -> Rulebook:
 
     if layers is None:
@@ -136,6 +163,12 @@ def rules(problem : Problem,
         if random_c_in_target:
             for target in problem.targets:
                 problem.types[target][2] = random.choice(list(problem.all_types))
+                
+    parent_target : Dict[int, int] = dict()
+    for original, copies in problem.target_copies.items():
+        parent_target[original] = original
+        for copy in copies:
+            parent_target[copy] = original
 
     for head in range(pred_dim):
         if head not in problem.bk:
@@ -160,6 +193,10 @@ def rules(problem : Problem,
                             if layers is not None and head in problem.invented and p != head and p in problem.invented and layer_dict[head]+1 != layer_dict[p]: continue
 
                             if layers is not None and head == 0 and p in problem.invented and layer_dict[p] != 0: continue #main pred only calls first layer
+                            
+                            if not allow_cross_targets and head != p and head in parent_target and p in parent_target and parent_target[head] == parent_target[p]: continue
+                            
+                            if not allow_cross_targets and head in problem.invented and p in parent_target: continue
 
                             if use_types:
                                 logging.debug(f"{p=} {head=} {problem.predicate_name[p]=} {problem.predicate_name[head]=}")
