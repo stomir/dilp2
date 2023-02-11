@@ -1,6 +1,7 @@
 import fire #type: ignore
 import pyparsing as pp #type: ignore
 import sys
+from requests.utils import requote_uri #type: ignore
 from typing import *
 
 number = pp.Word(pp.nums + '.')
@@ -38,6 +39,9 @@ def reachable(edges : Dict[str, Set[str]], a : Set[str]) -> Set[str]:
                     ret.add(v2)
     return ret
 
+def graph_link(g : str) -> str:
+    return "https://dreampuf.github.io/GraphvizOnline/#" + requote_uri(g)
+
 def main(show_all : bool = False, target : Set[str] = set(), show_cut_code : bool = False):
     edges : Dict[str, Set[str]] = {}
     code : Dict[str, List[str]] = {}
@@ -54,21 +58,25 @@ def main(show_all : bool = False, target : Set[str] = set(), show_cut_code : boo
         code[parsed[0]].append(line)
 
     reached = reachable(edges, target)
+    
     print(f"{target=} {edges=} {reached=}")
-    print ('digraph G {')
+    ret = 'digraph G {\n'
     for v1, v2s in edges.items():
         if not show_all and v1 not in reached:
             continue
         for v2 in v2s:
-            print(f"{v1} -> {v2}")
-    print("}")
+            ret += f"{v1} -> {v2}\n"
+    ret += "}\n"
+
+    print(graph_link(ret))
+
 
     if show_cut_code:
         for pred, lines in code.items():
             if pred not in reached:
                 continue
             for line in lines:
-                print(line)
+                print(line.replace('\n', ''))
 
 if __name__ == "__main__":
     fire.Fire(main)
