@@ -41,13 +41,13 @@ def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) ->
 
     return torch.cat([target_values] + other_values, dim=1)
 
-def random_init(init : str, device : torch.device, shape : Sequence[int], init_size : float, dtype) -> torch.Tensor:
+def random_init(init : str, device : torch.device, shape : List[int], init_size : float, dtype) -> torch.Tensor:
     if init == 'normal':
-        return torch.normal(mean=torch.zeros(size=[shape[0], 2, 2, shape[3]], device=device, dtype=dtype), std=init_size)
+        return torch.normal(mean=torch.zeros(size=shape, device=device, dtype=dtype), std=init_size)
     elif init == 'uniform':
-        return torch.rand([shape[0], 2, 2, shape[3]], device=device, dtype=dtype) * init_size
+        return torch.rand(size=shape, device=device, dtype=dtype) * init_size
     elif init == 'discrete':
-        return F.one_hot(torch.randint(low=0, high=shape[3], size=[shape[0], 2, 2], device=device), num_classes = shape[3]).float()
+        return F.one_hot(torch.randint(low=0, high=shape[-1], size=shape[:-1], device=device), num_classes = shape[3]).float()
     else:
         raise RuntimeError(f'unknown init: {init}')
     
@@ -90,10 +90,12 @@ def main(task : str,
         plot_output : Optional[str] = None,
         plot_interval : int = 100,
         softmax_temp : Optional[float] = 1.0,
-        num_samples : int = 0,
         norm_p : float = 1.0,
         true_init_bias : float = 0.0,
         target_copies : int = 0,
+        split : int = 2,
+        min_parameter : Optional[float] = None,
+        max_parameter : Optional[float] = None,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -173,11 +175,11 @@ def main(task : str,
     #This should not be used. Instead one of the dictionaries should be used.
     #pred_names = list(pred_dict_rev.keys())
 
-    rulebook = torcher.rules(problem, dev, **rules_args)
+    rulebook = torcher.rules(problem, dev, split = split, **rules_args)
 
     shape = rulebook.mask.shape
 
-    weights : torch.nn.Parameter = torch.nn.Parameter(random_init(init, device = dev, shape = shape, init_size = init_size, dtype = dtype))
+    weights : torch.nn.Parameter = torch.nn.Parameter(random_init(init, device = dev, shape = list(shape), init_size = init_size, dtype = dtype))
     params : Sequence[torch.nn.Parameter] = [weights]
     epoch : int = 0
 
@@ -227,7 +229,7 @@ def main(task : str,
                 ws = masked_softmax(weights, rulebook.mask, temp = softmax_temp)
 
                 vals = dilp.infer(base_val = batch.base_val, rulebook = rulebook, problem = problem,
-                            weights = ws, steps=steps, devices = devs, num_samples = num_samples)
+                            weights = ws, steps=steps, devices = devs, split=split)
 
                 #assert (vals < 0).sum() == 0 and (vals > 1).sum() == 0, f"{(vals < 0).sum()=} {(vals > 1).sum()=} {i=} {steps=} {devices=} {vals.max()=}"
 
@@ -309,9 +311,17 @@ def main(task : str,
 
             opt.step()
 
-            if rerandomize != 0 and (epoch-1) % int(rerandomize_interval) == 0:
+            if min_parameter is not None or max_parameter is not None:
                 with torch.no_grad():
-                    weights[:] = weights * (1 - rerandomize) + random_init(init, dev, shape, init_size, dtype) * rerandomize
+                    for param in params:
+                        if min_parameter is not None:
+                            param[:] = torch.max(param, torch.as_tensor(min_parameter, device=param.device))
+                        if max_parameter is not None:
+                            param[:] = torch.min(param, torch.as_tensor(max_parameter, device=param.device))
+
+            # if rerandomize != 0 and (epoch-1) % int(rerandomize_interval) == 0:
+            #     with torch.no_grad():
+            #         weights[:] = weights * (1 - rerandomize) + random_init(init, dev, shape, init_size, dtype) * rerandomize
 
             if plot_output is not None and (epoch-1) % int(plot_interval) == 0:
                 plot.weights_plot(weights, outdir=plot_output, epoch = epoch)
@@ -360,7 +370,7 @@ def main(task : str,
                 for world in train_worlds:
                     vals = torcher.base_val(problem, [world], dtype=dtype).to(dev)
                     vals = dilp.infer(base_val = vals, rulebook = rulebook, problem = problem,
-                            weights = ws, steps=steps, num_samples = 0)
+                            weights = ws, steps=steps,split=split)
                     batch = torcher.targets_batch(problem, [world], dev, dtype=dtype)
                     for original, copies in problem.target_copies.items():
                         for pred in copies + [original]:
@@ -388,10 +398,10 @@ def main(task : str,
                 batch = torcher.targets_batch(problem, [world], dev, dtype=dtype)
                 batch = batch.filter(lambda target: target[1] in chosen_targets)
                 base_val = batch.base_val.to(dev)
-                fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy_p, rulebook.mask, softmax_temp), steps=val_steps, devices=devs, problem = problem, num_samples = 0)
+                fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy_p, rulebook.mask, softmax_temp), steps=val_steps, devices=devs, problem = problem, split=split)
                 logging.info(f"{fuzzy_vals.mean()=}")
 
-                crisp_vals = dilp.infer(base_val, rulebook, weights = crisp, steps=val_steps, devices=devs, num_samples = 0, problem = problem)
+                crisp_vals = dilp.infer(base_val, rulebook, weights = crisp, steps=val_steps, devices=devs, problem = problem, split=split)
 
                 report_t = report_tensor([fuzzy_vals, crisp_vals], batch)
                 fuzzy_report = report_t[:,1]

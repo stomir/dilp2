@@ -60,9 +60,10 @@ class WeirdMinDim(torch.autograd.Function):
 class WeirdMaxDim(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, a, dim):
+    def forward(ctx, a, dim, scale):
         ctx.dim = dim
         ctx.size = a.shape[dim]
+        ctx.scale = scale
         return  a.max(dim=dim).values
 
     @staticmethod
@@ -74,13 +75,13 @@ class WeirdMaxDim(torch.autograd.Function):
 class WeirdNorm(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, a, dim):
-        ctx.dim = dim
+    def forward(ctx, a, dims):
+        ctx.dims = dims #sorted(dims, reverse=True)
         return a
 
     @staticmethod
     def backward(ctx, grad_output):
-        mean = grad_output.mean(ctx.dim, keepdim=True)
+        mean = grad_output.mean(ctx.dims, keepdim=True)
         var = (grad_output - mean).square().mean().sqrt()
         eps = 1e-9
-        return grad_output / (var + eps), None
+        return grad_output / (ctx.scale * (var + eps)), None

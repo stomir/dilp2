@@ -48,70 +48,71 @@ def generalized_mean(p : float) -> Callable[[torch.Tensor, int], torch.Tensor]:
     return gm
     
 
-conjunction_body_pred : Callable[[torch.Tensor, int], torch.Tensor] = conjunction_dim_max
+conjunction_body_pred : Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = conjunction2_max
 disjunction_quantifier : Callable[[torch.Tensor, int], torch.Tensor] = disjunction_dim_max
 disjunction_steps : Callable[[torch.Tensor, torch.Tensor], torch.Tensor]  = disjunction2_max
-disjunction_clauses : Callable[[torch.Tensor, int], torch.Tensor] = disjunction_dim_max
+disjunction_clauses : Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = disjunction2_max
 
 def set_norm(norm_name : str, p : float):
     global conjunction_body_pred, disjunction_quantifier, disjunction_steps, disjunction_clauses
     if norm_name == 'max':
-        conjunction_body_pred = conjunction_dim_max
+        conjunction_body_pred = conjunction2_max
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction_dim_max
+        disjunction_clauses = disjunction2_max
     elif norm_name == 'prod':
-        conjunction_body_pred = conjunction_dim_prod
+        conjunction_body_pred = conjunction2_prod
         disjunction_quantifier = disjunction_dim_prod
         disjunction_steps = disjunction2_prod
-        disjunction_clauses = disjunction_dim_prod
+        disjunction_clauses = disjunction2_prod
     elif norm_name == 'mixed':
-        conjunction_body_pred = conjunction_dim_prod
+        conjunction_body_pred = conjunction2_prod
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction_dim_max
+        disjunction_clauses = disjunction2_max
     elif norm_name == 'weird':
-        conjunction_body_pred = weird.WeirdMinDim.apply #type: ignore
+        conjunction_body_pred = weird.WeirdMin.apply #type: ignore
         disjunction_quantifier = weird.WeirdMaxDim.apply #type: ignore
         disjunction_steps = weird.WeirdMax.apply #type: ignore
         disjunction_clauses = weird.WeirdMaxDim.apply #type: ignore
     elif norm_name == 'mixed_left':
-        conjunction_body_pred = conjunction_dim_prod
+        conjunction_body_pred = conjunction2_prod
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max_left
-        disjunction_clauses = disjunction_dim_max
+        disjunction_clauses = disjunction2_max
     elif norm_name == 'dilp':
-        conjunction_body_pred = conjunction_dim_prod
+        conjunction_body_pred = conjunction2_prod
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_prod
-        disjunction_clauses = disjunction_dim_max
+        disjunction_clauses = disjunction2_max
     elif norm_name == 'dilpB':
-        conjunction_body_pred = conjunction_dim_prod
+        conjunction_body_pred = conjunction2_prod
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max_left
-        disjunction_clauses = disjunction_dim_prod
+        disjunction_clauses = disjunction2_prod
     elif norm_name == 'dilpB2':
-        conjunction_body_pred = conjunction_dim_prod
+        conjunction_body_pred = conjunction2_prod
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction_dim_prod
+        disjunction_clauses = disjunction2_prod
     elif norm_name == 'dilpC':
-        conjunction_body_pred = conjunction_dim_max
+        conjunction_body_pred = conjunction2_max
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction_dim_prod
-    elif norm_name == 'sigmoid':
-        conjunction_body_pred = lambda a, dim: (a * 12 -6).sigmoid().prod(dim).square()
-        disjunction_quantifier = disjunction_dim_max
-        disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction_dim_max
+        disjunction_clauses = disjunction2_prod
     elif norm_name == 'krieken':
-        conjunction_body_pred = conjunction_dim_prod
+        conjunction_body_pred = conjunction2_prod
         disjunction_quantifier = generalized_mean(p = 20)
         disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction_dim_max
+        disjunction_clauses = disjunction2_max
     else:
         assert False, f"wrong norm name {norm_name=}"
+
+def squeeze_into(v : torch.Tensor, dim : int, dim2 : int) -> torch.Tensor:
+    shape = list(v.shape)
+    shape[dim] *= shape[dim2]
+    del shape[dim2]
+    return v.reshape(shape)
 
 def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
     ret = []
@@ -136,82 +137,84 @@ def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
         ret.append(v)
     return torch.cat(ret, dim=2)
 
-def heuristic_weighing(vals : torch.Tensor, weights : torch.Tensor, num_samples : int) -> torch.Tensor:
-
-
-    squeezed_weights = weights.view([-1, weights.shape[-1]])
-    logging.debug(f"{weights.shape=} {squeezed_weights.shape=}")
-    chosen = torch.multinomial(squeezed_weights, num_samples = num_samples, replacement=False)
-    chosen_shape = list(weights.shape)
-    chosen_shape[-1] = -1
-    chosen = chosen.view(chosen_shape)
-    logging.debug(f"{vals.shape=}")
-    chosen_weights = torch.gather(weights, dim = -1, index = chosen)
-    logging.debug(f"{weights.shape=} {chosen.shape=} {chosen_weights.shape=}")
-    gradient_one = chosen_weights / chosen_weights.detach()
-    gradient_one = gradient_one.unsqueeze(0).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-    
-    #merge var choices into one dim
-    shape = list(vals.shape)
-    shape[1] *= shape[2]
-    del shape[2]
-    vals = vals.view(shape)
-
-    logging.debug(f"{vals.shape=} {chosen.shape=} {gradient_one.shape=}")
-    vals = vals[:,chosen]
-    logging.debug(f"{vals.shape=} after chosing")
-    vals = vals * gradient_one
-    vals = vals.mean(-4)
-    
-    return vals
-
 def infer_single_step(ex_val : torch.Tensor, 
         rule_weights : torch.Tensor,
-        num_samples : int = 0,
+        split : int,
         ) -> torch.Tensor:
-    logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
 
-  
+    rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) #atoms
+    rule_weights = rule_weights.unsqueeze(0) #worlds
 
-    #rule weighing
-    
-    logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
-    if num_samples != 0:
-        ex_val = heuristic_weighing(ex_val, rule_weights, num_samples = num_samples)
-    else:
-        rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) #atoms
-        rule_weights = rule_weights.unsqueeze(0) #worlds
+    ex_val = squeeze_into(ex_val, 1, 2)
+
+    if split == 2:
+        logging.debug(f"{ex_val.shape=} {rule_weights.shape=}")
         
-        shape = list(ex_val.shape)
-        shape[1] *= shape[2]
-        del shape[2]
-        ex_val = ex_val.reshape(shape)
         ex_val = ex_val.unsqueeze(0).unsqueeze(0).unsqueeze(0)
 
         ex_val = ex_val#.unsqueeze(-5).unsqueeze(-5)
         ex_val = ex_val * rule_weights 
         ex_val = ex_val.sum(dim = -4)
-    #ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
-    
-    control_valve = torch.max(ex_val.detach()-1, torch.as_tensor(0.0, device=ex_val.device))
-    ex_val = ex_val - control_valve
+        #ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
+        
+        control_valve = torch.max(ex_val.detach()-1, torch.as_tensor(0.0, device=ex_val.device))
+        ex_val = ex_val - control_valve
 
-    #conjuction of body predictes
-    ex_val = conjunction_body_pred(ex_val, -4)
-    #existential quantification
-    ex_val = disjunction_quantifier(ex_val, -1)
-    #disjunction on clauses
-    ex_val = disjunction_clauses(ex_val, -3)
-    logging.debug(f"returning {ex_val.shape=}")
-    assert len(ex_val.shape) == 1+1+1+1
+        #conjuction of body predictes
+        ex_val = conjunction_body_pred(ex_val[:,:,:,0,:,:,:], ex_val[:,:,:,1,:,:,:])
+        #existential quantification
+        ex_val = disjunction_quantifier(ex_val, -1)
+        #disjunction on clauses
+        ex_val = disjunction_clauses(ex_val[:,:,0,:,:], ex_val[:,:,1,:,:])
+        logging.debug(f"returning {ex_val.shape=}")
+        return ex_val
+    elif split == 1:
+        ex_val = conjunction_body_pred(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
+        logging.debug(f"ex_val big {ex_val.shape=}")
 
-    #ex_val = weird.WeirdMin1.apply(ex_val, torch.as_tensor(1.0, device=ex_val.device))
-   
-    return ex_val
+        ex_val = squeeze_into(ex_val, 1, 2)
+        ex_val = ex_val.unsqueeze(0).unsqueeze(0)
+        ex_val = ex_val * rule_weights 
+        ex_val = ex_val.sum(dim = -4)
+
+        #existential quantification
+        ex_val = disjunction_quantifier(ex_val, -1)
+        #disjunction on clauses
+        ex_val = disjunction_clauses(ex_val[:,:,0,:,:], ex_val[:,:,1,:,:])
+        logging.debug(f"returning {ex_val.shape=}")
+        return ex_val
+    elif split == 0:
+        ex_val = conjunction_body_pred(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
+        ex_val = squeeze_into(ex_val, 1, 2)
+
+        #existential quantification
+        ex_val = disjunction_quantifier(ex_val, -1)
+
+        ex_val = ex_val.unsqueeze(0).unsqueeze(0)
+        ex_val = ex_val * rule_weights 
+        ex_val = ex_val.sum(dim = -4)
+
+        
+        ex_val = disjunction_quantifier(ex_val, -1)
+        #disjunction on clauses
+
+        ex_val = disjunction_clauses(ex_val.unsqueeze(2), ex_val.unsqueeze(3))
+        ex_val = squeeze_into(ex_val, 2, 3)
+
+        ex_val = ex_val.unsqueeze(0)
+        ex_val = ex_val * rule_weights 
+        ex_val = ex_val.sum(dim = -3)
+
+        logging.debug(f"returning {ex_val.shape=}")
+        return ex_val
+    else:
+        raise NotImplementedError(f"{split=}")
+
 
 def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
         return_dev : torch.device, devices : Sequence[torch.device],
         rule_weights : torch.Tensor,
+        split : int,
         ) -> torch.Tensor:
     pred_count : int = rule_weights.shape[0]
     per_dev = math.ceil(pred_count / len(devices))
@@ -226,6 +229,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
         for i, dev in enumerate(devices):
             rets.append(infer_single_step(
                 ex_val = extend_val(val.to(dev, non_blocking=True)),
+                split=split,
                 rule_weights = rule_weights_[i]))
         val = disjunction_steps(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
     
@@ -235,7 +239,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
 
 def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, 
             problem : Problem,
-            num_samples = 0,
+            split : int,
             vars : int = 3) -> torch.Tensor:
     val = base_val
     #non-bk weights
@@ -247,11 +251,12 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
     for i in range(0, steps):
         val2 = extend_val(val, vars)
         val2 = infer_single_step(ex_val = val2, \
-            rule_weights = weights, num_samples=num_samples)
+            split=split,
+            rule_weights = weights)
         val2 = torch.cat([bk_zeros, val2], dim=1)
         
         #weird grad norm
-        #val2 = weird.WeirdNorm.apply(val2, (0,1,2))
+        #val2 = weird.WeirdNorm.apply(val2, (-1,-2,-3), 1.0)
         
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         #vals.append(val2.unsqueeze(0))
@@ -263,14 +268,14 @@ def infer(base_val : torch.Tensor,
             weights : torch.Tensor,
             problem : Problem,
             steps : int,
-            num_samples : int,
+            split : int,
             devices : Optional[Sequence[torch.device]] = None,
             ) -> torch.Tensor:
     if devices is None:
-        return infer_steps(steps, base_val, rulebook, weights, problem, num_samples = num_samples, vars = 3)
+        return infer_steps(steps, base_val, rulebook, weights, problem, vars = 3, split=split)
     else:
-        return infer_steps_on_devs(steps, base_val, weights.device, devices,
-            weights)
+        return infer_steps_on_devs(steps, base_val, weights.device, devices, split = split,
+            rule_weights=weights)
 
 def loss_value(values : torch.Tensor, target_type : loader.TargetType, reduce : bool = True) -> torch.Tensor:
     if target_type == loader.TargetType.POSITIVE:
