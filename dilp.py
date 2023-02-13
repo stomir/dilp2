@@ -335,7 +335,7 @@ def print_program(problem : loader.Problem, weights : torch.Tensor, split : int)
             pred_name = problem.predicate_name[pred]
             for clause in range(2):
                 choices = list(weights[pred,clause].max(-1).indices.cpu())
-                print(clause_str(pred_name, choices[1], choices[2], problem))
+                print(clause_str(pred_name, choices[0], choices[1], problem))
     elif split == 1:
         for pred in list(problem.targets) + list(problem.invented):
             pred_name = problem.predicate_name[pred]
