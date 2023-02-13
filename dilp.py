@@ -8,7 +8,7 @@ from typing import *
 from loader import Problem
 from torcher import WorldsBatch, TargetSet, TargetType, Rulebook
 
-from zmq import device
+#from zmq import device
 import weird
 
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
@@ -279,7 +279,6 @@ def infer(base_val : torch.Tensor,
 
 def loss_value(values : torch.Tensor, target_type : loader.TargetType, reduce : bool = True) -> torch.Tensor:
     if target_type == loader.TargetType.POSITIVE:
-        #values = weird.weirdMin1(values, torch.as_tensor(1.0, device=values.device, dtype=values.dtype))
         ret = -(values + 1e-10).log()
         if reduce:
             ret = ret.mean()
@@ -299,19 +298,6 @@ def loss(vals : torch.Tensor, batch : WorldsBatch, filter : Optional[Callable[[T
     pos = loss_value(values = pos, target_type = TargetType.POSITIVE, reduce=True)
     neg = loss_value(values = neg, target_type = TargetType.NEGATIVE, reduce=True)
     return (pos + neg) / 2
-
-# def legacy_loss(base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor,
-#         targets : torch.Tensor,
-#         target_values : torch.Tensor, steps : int, 
-#         devices : Optional[Sequence[torch.device]] = None,
-#         ) -> Tuple[torch.Tensor, torch.Tensor]:
-#     if devices is None:
-#         val = infer_steps(steps, base_val, rulebook, weights)
-#     else:
-#         val = infer_steps_on_devs(steps, base_val, devices[-1], devices, weights)
-#     preds = val[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]
-#     #return (preds - target_values).square(), preds
-#     return (- ((preds + 1e-10).log() * target_values + (1-preds + 1e-10).log() * (1-target_values))), preds
 
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]
