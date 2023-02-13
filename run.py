@@ -333,8 +333,8 @@ def main(task : str,
             torch.save(weights.detach(), weights_file)
             raise e
         
-        report = {'entropy' : actual_entropy.item(), 'batch_loss' : loss_sum, 
-                'target_loss' : target_loss,
+        report = {'entropy' : actual_entropy.item(), 'b_loss' : loss_sum, 
+                'loss' : target_loss,
                 #'avg_val' : avg_vals,
                 #'entropy_weight' : entropy_weight_in_use * entropy_weight,
                 }
@@ -344,7 +344,7 @@ def main(task : str,
                 report,
                 global_step=epoch)
 
-    dilp.print_program(problem, mask(weights, rulebook))
+    dilp.print_program(problem, mask(weights, rulebook), split=split)
 
     if output is not None:
         torch.save((weights.detach().cpu(), opt.state_dict(), epoch, entropy_enabled, entropy_weight_in_use), output)

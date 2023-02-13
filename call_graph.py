@@ -50,7 +50,6 @@ def main(show_all : bool = False, target : Set[str] = set(), show_cut_code : boo
         parsed = sentence.parseString(line)
         add_edge(edges, parsed[0], parsed[4])
         add_edge(edges, parsed[0], parsed[7])
-        print(f"{parsed[0]=} {parsed[4]=} {parsed[7]=}")
         if len(target) == 0:
             target = {parsed[0]}
         if parsed[0] not in code:
@@ -59,7 +58,7 @@ def main(show_all : bool = False, target : Set[str] = set(), show_cut_code : boo
 
     reached = reachable(edges, target)
     
-    print(f"{target=} {edges=} {reached=}")
+    #print(f"{target=} {edges=} {reached=}")
     ret = 'digraph G {\n'
     for v1, v2s in edges.items():
         if not show_all and v1 not in reached:

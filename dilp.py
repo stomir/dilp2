@@ -8,7 +8,6 @@ from typing import *
 from loader import Problem
 from torcher import WorldsBatch, TargetSet, TargetType, Rulebook
 
-#from zmq import device
 import weird
 
 def disjunction2_prod(a : torch.Tensor, b : torch.Tensor) -> torch.Tensor:
@@ -53,6 +52,12 @@ disjunction_quantifier : Callable[[torch.Tensor, int], torch.Tensor] = disjuncti
 disjunction_steps : Callable[[torch.Tensor, torch.Tensor], torch.Tensor]  = disjunction2_max
 disjunction_clauses : Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = disjunction2_max
 
+def soft_max(t : torch.Tensor, d : int, p : float) -> torch.Tensor:
+    return (t * (t * p).softmax(dim=d)).sum(dim=d)
+
+def dim2two(f : Callable[[torch.Tensor, int], torch.Tensor]) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+    return lambda a,b: f(torch.cat([a.unsqueeze(0), b.unsqueeze(0)]), 0)
+
 def set_norm(norm_name : str, p : float):
     global conjunction_body_pred, disjunction_quantifier, disjunction_steps, disjunction_clauses
     if norm_name == 'max':
@@ -70,11 +75,26 @@ def set_norm(norm_name : str, p : float):
         disjunction_quantifier = disjunction_dim_max
         disjunction_steps = disjunction2_max
         disjunction_clauses = disjunction2_max
+    elif norm_name == 'soft_max':
+        conjunction_body_pred = dim2two(lambda t,d: soft_max(t,d,-p))
+        disjunction_quantifier = lambda t,d: soft_max(t,d,p)
+        disjunction_steps = dim2two(lambda t,d: soft_max(t,d,p))
+        disjunction_clauses = dim2two(lambda t,d: soft_max(t,d,p))
     elif norm_name == 'weird':
         conjunction_body_pred = weird.WeirdMin.apply #type: ignore
         disjunction_quantifier = weird.WeirdMaxDim.apply #type: ignore
         disjunction_steps = weird.WeirdMax.apply #type: ignore
         disjunction_clauses = weird.WeirdMaxDim.apply #type: ignore
+    elif norm_name == 'weird2':
+        conjunction_body_pred = conjunction2_prod
+        disjunction_quantifier = weird.WeirdMax2Dim.apply
+        disjunction_steps = disjunction2_max
+        disjunction_clauses = disjunction2_max
+    elif norm_name == 'weird22':
+        conjunction_body_pred = lambda a,b: 1-(weird.WeirdMax2.apply(1-a,1-b))
+        disjunction_quantifier = weird.WeirdMax2Dim.apply
+        disjunction_steps = weird.WeirdMax2.apply
+        disjunction_clauses = weird.WeirdMax2.apply
     elif norm_name == 'mixed_left':
         conjunction_body_pred = conjunction2_prod
         disjunction_quantifier = disjunction_dim_max
@@ -102,7 +122,7 @@ def set_norm(norm_name : str, p : float):
         disjunction_clauses = disjunction2_prod
     elif norm_name == 'krieken':
         conjunction_body_pred = conjunction2_prod
-        disjunction_quantifier = generalized_mean(p = 20)
+        disjunction_quantifier = generalized_mean(p = p)
         disjunction_steps = disjunction2_max
         disjunction_clauses = disjunction2_max
     else:
@@ -278,6 +298,8 @@ def infer(base_val : torch.Tensor,
             rule_weights=weights)
 
 def loss_value(values : torch.Tensor, target_type : loader.TargetType, reduce : bool = True) -> torch.Tensor:
+    if len(values) == 0:
+        return torch.as_tensor(0.0, device=values.device)
     if target_type == loader.TargetType.POSITIVE:
         ret = -(values + 1e-10).log()
         if reduce:
@@ -290,6 +312,8 @@ base_filter = filter
 def extract_targets(vals : torch.Tensor, targets : torch.Tensor, filter : Optional[Callable[[Tuple[int,int,int]], bool]] = None) -> torch.Tensor:
     if filter is not None:
         targets = list(base_filter(filter, targets)) #type: ignore
+    if len(targets) == 0:
+        return torch.as_tensor([], device=targets.device)
     return vals[targets[:,0],targets[:,1],targets[:,2],targets[:,3]]
 
 def loss(vals : torch.Tensor, batch : WorldsBatch, filter : Optional[Callable[[Tuple[int,int,int]], bool]] = None) -> torch.Tensor:
@@ -302,18 +326,38 @@ def loss(vals : torch.Tensor, batch : WorldsBatch, filter : Optional[Callable[[T
 def var_choices(n : int, vars : int = 3) -> List[int]:
     return [int(n) // vars, n % vars]
 
-def body_pred_str(pred_name : str, variable_choice : int) -> str:
-    vs = ','.join(map(lambda v: chr(ord('A')+v), var_choices(variable_choice)))
-    return f'{pred_name}({vs})'
+def body_pred_str(choice : int, problem : loader.Problem) -> str:
+    chosen_pred = choice // 9
+    chosen_vs = choice % 9
+    vs = ','.join(map(lambda v: chr(ord('A')+v), var_choices(chosen_vs)))
+    return f'{problem.predicate_name[chosen_pred]}({vs})'
 
-def print_program(problem : loader.Problem, weights : torch.Tensor):
-    for pred in list(problem.targets) + list(problem.invented):
-        pred_name = problem.predicate_name[pred]
-        for clause in range(2):
-            body_preds = []
-            for body_pred in range(2):
-                rule_no = int(weights[pred,clause,body_pred].max(0)[1].item())
-                rule_pred = rule_no // 9
-                rule_vc = rule_no % 9
-                body_preds.append(body_pred_str(problem.predicate_name[rule_pred], rule_vc))
-            print(f"{pred_name.rjust(10, ' ')}(A,B) :- " + ','.join(body_preds))
+def clause_str(pred_name : str, choice1 : int, choice2 : int, problem : loader.Problem) -> str:
+    return f"{pred_name.rjust(10, ' ')}(A,B) :- {body_pred_str(choice1, problem)}, {body_pred_str(choice2, problem)}."
+
+def print_program(problem : loader.Problem, weights : torch.Tensor, split : int):
+    pred_dim = len(problem.predicate_name)
+    if split == 2:
+        for pred in list(problem.targets) + list(problem.invented):
+            pred_name = problem.predicate_name[pred]
+            for clause in range(2):
+                choices = list(weights[pred,clause].max(-1).indices.cpu())
+                print(clause_str(pred_name, choices[1], choices[2], problem))
+    elif split == 1:
+        for pred in list(problem.targets) + list(problem.invented):
+            pred_name = problem.predicate_name[pred]
+            d = pred_dim * 9
+            for clause in range(2):
+                
+                rule_no = weights[pred,clause].max(-1).values.item()
+                print(clause_str(pred_name, rule_no // d, rule_no % d, problem))
+    elif split == 0:
+        for pred in list(problem.targets) + list(problem.invented):
+            pred_name = problem.predicate_name[pred]
+            d = pred_dim * 9
+            d2 = d * d
+            rule_no = weights[pred].max(-1).values.item()
+            for clause_choice in (rule_no // d2, rule_no % d2):
+                print(clause_str(pred_name, clause_choice // d, clause_choice % d, problem))
+    else: 
+        raise NotImplementedError
