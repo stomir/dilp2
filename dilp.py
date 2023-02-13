@@ -190,9 +190,9 @@ def infer_single_step(ex_val : torch.Tensor,
         return ex_val
     elif split == 1:
         ex_val = conjunction_body_pred(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
+        ex_val = squeeze_into(ex_val, 1, 2)
         logging.debug(f"ex_val big {ex_val.shape=}")
 
-        ex_val = squeeze_into(ex_val, 1, 2)
         ex_val = ex_val.unsqueeze(0).unsqueeze(0)
         ex_val = ex_val * rule_weights 
         ex_val = ex_val.sum(dim = -4)
@@ -209,20 +209,13 @@ def infer_single_step(ex_val : torch.Tensor,
 
         #existential quantification
         ex_val = disjunction_quantifier(ex_val, -1)
+        rule_weights = rule_weights.squeeze(-1)
 
-        ex_val = ex_val.unsqueeze(0).unsqueeze(0)
-        ex_val = ex_val * rule_weights 
-        ex_val = ex_val.sum(dim = -4)
-
-        
-        ex_val = disjunction_quantifier(ex_val, -1)
-        #disjunction on clauses
-
-        ex_val = disjunction_clauses(ex_val.unsqueeze(2), ex_val.unsqueeze(3))
-        ex_val = squeeze_into(ex_val, 2, 3)
+        ex_val = disjunction_clauses(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
+        ex_val = squeeze_into(ex_val, 1, 2)
 
         ex_val = ex_val.unsqueeze(0)
-        ex_val = ex_val * rule_weights 
+        ex_val = ex_val * rule_weights
         ex_val = ex_val.sum(dim = -3)
 
         logging.debug(f"returning {ex_val.shape=}")
@@ -347,16 +340,15 @@ def print_program(problem : loader.Problem, weights : torch.Tensor, split : int)
         for pred in list(problem.targets) + list(problem.invented):
             pred_name = problem.predicate_name[pred]
             d = pred_dim * 9
-            for clause in range(2):
-                
-                rule_no = weights[pred,clause].max(-1).values.item()
+            for clause in range(2):                
+                rule_no = weights[pred,clause].max(-1).indices.item()
                 print(clause_str(pred_name, rule_no // d, rule_no % d, problem))
     elif split == 0:
         for pred in list(problem.targets) + list(problem.invented):
             pred_name = problem.predicate_name[pred]
             d = pred_dim * 9
             d2 = d * d
-            rule_no = weights[pred].max(-1).values.item()
+            rule_no = weights[pred].max(-1).indices.item()
             for clause_choice in (rule_no // d2, rule_no % d2):
                 print(clause_str(pred_name, clause_choice // d, clause_choice % d, problem))
     else: 

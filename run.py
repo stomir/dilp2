@@ -137,7 +137,7 @@ def main(task : str,
         torch.cuda.manual_seed(seed) #type: ignore
 
     dilp.set_norm(norm, p = norm_p)
-    dev = torch.device(cuda if type(cuda) == int else 0) if cuda else torch.device('cpu')
+    dev = torch.device(cuda if type(cuda) == int else 0) if cuda or cuda == 0 else torch.device('cpu')
 
     logging.info(f'{dev=}')
 

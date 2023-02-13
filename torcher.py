@@ -220,7 +220,7 @@ def rules(problem : Problem,
                                 or (c2p2, c2a2, c2b2) == (head, 0, 1) \
                                 or (c1p2, c1a2, c1b2) == (head, 0, 1): 
                                     ret[head,i] = False
-                                    continue #self recursion
+                                    #self recursion
 
     else:
         raise NotImplementedError(f'wrong {split=}')
