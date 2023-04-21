@@ -23,7 +23,7 @@ def count(lines : Iterable[str], things : Iterable[str]) -> Dict[str, int]:
     return ret
 
 
-def main(*files, idx_key : Optional[int] = None, output : str = "chart.png") -> None:
+def main(*files, idx_key : Optional[int] = None, output : str = "chart.png", use_names : bool = False, legend : Optional[str] = 'best') -> None:
 
     if idx_key is None:
         a = natsort.natsort_key(files[0])
@@ -37,15 +37,20 @@ def main(*files, idx_key : Optional[int] = None, output : str = "chart.png") -> 
     labels : List[object] = []
 
     for key, file in sorted(((natsort.natsort_key(f), f) for f in files)):
+        if ':' in file:
+            file, label = file.split(':')
+        else:
+            label = file.split('-')[-1] if '-' in file else file.split('_')[-1]
+            label = label.replace('/', '')
         lines = open(os.path.join(file, 'report'), 'r').readlines()
         for o, n in count(lines, outcomes).items():
             x[o].append(n)
-        labels.append(key[idx_key])
+        labels.append(label)
 
     print(f"{labels=}\n{x=}")
     matplotlib.pyplot.stackplot(labels, [x[o] for o in outcomes], colors=colors, alpha=0.5, labels=outcomes)
-    matplotlib.pyplot.legend()
-    matplotlib.pyplot.show()
+    if legend is not None:
+        matplotlib.pyplot.legend(loc=legend)
     matplotlib.pyplot.savefig(output)
 
 

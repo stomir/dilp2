@@ -7,6 +7,7 @@ import itertools
 from typing import *
 from loader import Problem
 from torcher import WorldsBatch, TargetSet, TargetType, Rulebook
+import torch.nn.functional as F
 
 import weird
 
@@ -45,12 +46,6 @@ def generalized_mean(p : float) -> Callable[[torch.Tensor, int], torch.Tensor]:
     def gm(a : torch.Tensor, dim : int = -1) -> torch.Tensor:
         return a.pow(p).mean(dim=dim).pow(1/p)
     return gm
-    
-
-conjunction_body_pred : Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = conjunction2_max
-disjunction_quantifier : Callable[[torch.Tensor, int], torch.Tensor] = disjunction_dim_max
-disjunction_steps : Callable[[torch.Tensor, torch.Tensor], torch.Tensor]  = disjunction2_max
-disjunction_clauses : Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = disjunction2_max
 
 def soft_max(t : torch.Tensor, d : int, p : float) -> torch.Tensor:
     return (t * (t * p).softmax(dim=d)).sum(dim=d)
@@ -58,75 +53,192 @@ def soft_max(t : torch.Tensor, d : int, p : float) -> torch.Tensor:
 def dim2two(f : Callable[[torch.Tensor, int], torch.Tensor]) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
     return lambda a,b: f(torch.cat([a.unsqueeze(0), b.unsqueeze(0)]), 0)
 
-def set_norm(norm_name : str, p : float):
-    global conjunction_body_pred, disjunction_quantifier, disjunction_steps, disjunction_clauses
-    if norm_name == 'max':
-        conjunction_body_pred = conjunction2_max
-        disjunction_quantifier = disjunction_dim_max
-        disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction2_max
-    elif norm_name == 'prod':
-        conjunction_body_pred = conjunction2_prod
-        disjunction_quantifier = disjunction_dim_prod
-        disjunction_steps = disjunction2_prod
-        disjunction_clauses = disjunction2_prod
-    elif norm_name == 'mixed':
-        conjunction_body_pred = conjunction2_prod
-        disjunction_quantifier = disjunction_dim_max
-        disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction2_max
-    elif norm_name == 'soft_max':
-        conjunction_body_pred = dim2two(lambda t,d: soft_max(t,d,-p))
-        disjunction_quantifier = lambda t,d: soft_max(t,d,p)
-        disjunction_steps = dim2two(lambda t,d: soft_max(t,d,p))
-        disjunction_clauses = dim2two(lambda t,d: soft_max(t,d,p))
-    elif norm_name == 'weird':
-        conjunction_body_pred = weird.WeirdMin.apply #type: ignore
-        disjunction_quantifier = weird.WeirdMaxDim.apply #type: ignore
-        disjunction_steps = weird.WeirdMax.apply #type: ignore
-        disjunction_clauses = weird.WeirdMaxDim.apply #type: ignore
-    elif norm_name == 'weird2':
-        conjunction_body_pred = conjunction2_prod
-        disjunction_quantifier = weird.WeirdMax2Dim.apply
-        disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction2_max
-    elif norm_name == 'weird22':
-        conjunction_body_pred = lambda a,b: 1-(weird.WeirdMax2.apply(1-a,1-b))
-        disjunction_quantifier = weird.WeirdMax2Dim.apply
-        disjunction_steps = weird.WeirdMax2.apply
-        disjunction_clauses = weird.WeirdMax2.apply
-    elif norm_name == 'mixed_left':
-        conjunction_body_pred = conjunction2_prod
-        disjunction_quantifier = disjunction_dim_max
-        disjunction_steps = disjunction2_max_left
-        disjunction_clauses = disjunction2_max
-    elif norm_name == 'dilp':
-        conjunction_body_pred = conjunction2_prod
-        disjunction_quantifier = disjunction_dim_max
-        disjunction_steps = disjunction2_prod
-        disjunction_clauses = disjunction2_max
-    elif norm_name == 'dilpB':
-        conjunction_body_pred = conjunction2_prod
-        disjunction_quantifier = disjunction_dim_max
-        disjunction_steps = disjunction2_max_left
-        disjunction_clauses = disjunction2_prod
-    elif norm_name == 'dilpB2':
-        conjunction_body_pred = conjunction2_prod
-        disjunction_quantifier = disjunction_dim_max
-        disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction2_prod
-    elif norm_name == 'dilpC':
-        conjunction_body_pred = conjunction2_max
-        disjunction_quantifier = disjunction_dim_max
-        disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction2_prod
-    elif norm_name == 'krieken':
-        conjunction_body_pred = conjunction2_prod
-        disjunction_quantifier = generalized_mean(p = p)
-        disjunction_steps = disjunction2_max
-        disjunction_clauses = disjunction2_max
+def two2dim(f : Callable[[torch.Tensor, torch.Tensor], torch.Tensor]) -> Callable[[torch.Tensor, int], torch.Tensor]:
+    def do(t : torch.Tensor, dim : int):
+        l = [u.squeeze(dim) for u in t.split(split_size=1, dim=dim)]
+        while len(l) > 1:
+            ret = []
+            while len(l) > 1:
+                a = l.pop()
+                b = l.pop()
+                ret.append(f(a,b))
+            if len(l) > 0:
+                ret.append(l.pop())
+            l = ret
+        return l[0]
+    return do
+        
+
+class Norms(NamedTuple):
+    conjunction_body_pred : Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = conjunction2_max
+    disjunction_quantifier : Callable[[torch.Tensor, int], torch.Tensor] = disjunction_dim_max
+    disjunction_steps : Callable[[torch.Tensor, torch.Tensor], torch.Tensor]  = disjunction2_max
+    disjunction_clauses : Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = disjunction2_max
+
+    @staticmethod
+    def from_name(norm_name : str = 'max', p : float = 1.0):
+        print(f"--- NORMS FROM NAME {norm_name=}")
+        if norm_name == 'max':
+            return Norms(conjunction_body_pred = conjunction2_max,
+                disjunction_quantifier = disjunction_dim_max,
+                disjunction_steps = disjunction2_max,
+                disjunction_clauses = disjunction2_max)
+        elif norm_name == 'prod':
+            return Norms(conjunction_body_pred = conjunction2_prod,
+                disjunction_quantifier = disjunction_dim_prod,
+                disjunction_steps = disjunction2_prod,
+                disjunction_clauses = disjunction2_prod)
+        elif norm_name == 'mixed':
+            return Norms(conjunction_body_pred = conjunction2_prod,
+                disjunction_quantifier = disjunction_dim_max,
+                disjunction_steps = disjunction2_max,
+                disjunction_clauses = disjunction2_max)
+        elif norm_name == 'soft_max_ex':
+            return Norms(conjunction_body_pred = conjunction2_prod,
+                disjunction_quantifier = lambda t,d: soft_max(t,d,p),
+                disjunction_steps = disjunction2_max,
+                disjunction_clauses = disjunction2_max)
+        elif norm_name == 'soft_max':
+                return Norms(conjunction_body_pred = dim2two(lambda t,d: soft_max(t,d,-p)),
+                    disjunction_quantifier = lambda t,d: soft_max(t,d,p),
+                    disjunction_steps = dim2two(lambda t,d: soft_max(t,d,p)),
+                    disjunction_clauses = dim2two(lambda t,d: soft_max(t,d,p)))
+        elif norm_name == 'weird':
+            return Norms(conjunction_body_pred = weird.WeirdMin.apply,
+                disjunction_quantifier = weird.WeirdMaxDim.apply,
+                disjunction_steps = weird.WeirdMax.apply,
+                disjunction_clauses = weird.WeirdMaxDim.apply)
+        elif norm_name == 'weird2':
+            return Norms(conjunction_body_pred = conjunction2_prod,
+                disjunction_quantifier = weird.WeirdMax2Dim.apply,
+                disjunction_steps = disjunction2_max,
+                disjunction_clauses = disjunction2_max)
+        elif norm_name == 'weird2_bp':
+            return Norms(conjunction_body_pred = lambda a,b: 1-(weird.WeirdMax2.apply(1-a,1-b)),
+                disjunction_quantifier = weird.WeirdMax2Dim.apply,
+                disjunction_steps = disjunction2_max,
+                disjunction_clauses = disjunction2_max)
+        elif norm_name == 'weird2_steps':
+            return Norms(conjunction_body_pred = conjunction2_prod,
+                disjunction_quantifier = weird.WeirdMax2Dim.apply,
+                disjunction_steps = weird.WeirdMax2.apply,
+                disjunction_clauses = disjunction2_max)
+        elif norm_name == 'weird2_clauses':
+            return Norms(conjunction_body_pred = conjunction2_prod,
+                disjunction_quantifier = weird.WeirdMax2Dim.apply,
+                disjunction_steps = disjunction2_max,
+                disjunction_clauses = weird.WeirdMax2.apply)
+        elif norm_name == 'weird2_all':
+            return Norms(conjunction_body_pred = lambda a,b: 1-(weird.WeirdMax2.apply(1-a,1-b)),
+                disjunction_quantifier = weird.WeirdMax2Dim.apply,
+                disjunction_steps = weird.WeirdMax2.apply,
+                disjunction_clauses = weird.WeirdMax2.apply)
+        elif norm_name == 'gauss_max':
+            gm = weird.gauss_max(p)
+            return Norms(conjunction_body_pred = lambda a,b: 1-gm(1-a,1-b),
+                disjunction_quantifier = two2dim(gm),
+                disjunction_steps = gm,
+                disjunction_clauses = gm)
+        elif norm_name == 'weird2_mixed':
+            return Norms(conjunction_body_pred = lambda a,b: 1-(weird.WeirdMax2.apply(1-a,1-b)),
+                disjunction_quantifier = weird.WeirdMax2Dim.apply,
+                disjunction_steps = disjunction2_max,
+                disjunction_clauses = weird.WeirdMax2.apply)
+        # elif norm_name == 'mixed_left':
+        #     return Norms(conjunction_body_pred = conjunction2_prod
+        #     disjunction_quantifier = disjunction_dim_max
+        #     disjunction_steps = disjunction2_max_left
+        #     disjunction_clauses = disjunction2_max
+        # elif norm_name == 'dilp':
+        #     return Norms(conjunction_body_pred = conjunction2_prod
+        #     disjunction_quantifier = disjunction_dim_max
+        #     disjunction_steps = disjunction2_prod
+        #     disjunction_clauses = disjunction2_max
+        # elif norm_name == 'dilpB':
+        #     return Norms(conjunction_body_pred = conjunction2_prod
+        #     disjunction_quantifier = disjunction_dim_max
+        #     disjunction_steps = disjunction2_max_left
+        #     disjunction_clauses = disjunction2_prod
+        # elif norm_name == 'dilpB2':
+        #     return Norms(conjunction_body_pred = conjunction2_prod
+        #     disjunction_quantifier = disjunction_dim_max
+        #     disjunction_steps = disjunction2_max
+        #     disjunction_clauses = disjunction2_prod
+        # elif norm_name == 'dilpC':
+        #     return Norms(conjunction_body_pred = conjunction2_max
+        #     disjunction_quantifier = disjunction_dim_max
+        #     disjunction_steps = disjunction2_max
+        #     disjunction_clauses = disjunction2_prod
+        # elif norm_name == 'krieken':
+        #     return Norms(conjunction_body_pred = conjunction2_prod
+        #     disjunction_quantifier = generalized_mean(p = p)
+        #     disjunction_steps = disjunction2_max
+        #     disjunction_clauses = disjunction2_max
+        else:
+            raise NotImplementedError(f"wrong norm name {norm_name=}")
+
+def random_init(init : str, device : torch.device, shape : List[int], init_size : float, dtype) -> torch.Tensor:
+    if init == 'normal':
+        return torch.normal(mean=torch.zeros(size=shape, device=device, dtype=dtype), std=init_size)
+    elif init == 'uniform':
+        return torch.rand(size=shape, device=device, dtype=dtype) * init_size
+    elif init == 'discrete':
+        return F.one_hot(torch.randint(low=0, high=shape[-1], size=shape[:-1], device=device), num_classes = shape[3]).float()
     else:
-        assert False, f"wrong norm name {norm_name=}"
+        raise RuntimeError(f'unknown init: {init}')
+
+def masked_softmax(t : torch.Tensor, mask : torch.Tensor, temp : Optional[float]) -> torch.Tensor:
+    if temp is None or temp == 0.:
+        t = t.where(mask, torch.as_tensor(0., device=t.device))
+        if temp is not None:
+            print(f'1 {t=}')
+            t = t / torch.max(t.sum(dim = -1, keepdim=True), torch.as_tensor(1e-3, device=t.device))
+            print(f'2 {t=}')
+    else:
+        t = t.where(mask, torch.as_tensor(-float('inf'), device=t.device)).softmax(-1)
+        t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device)) #type: ignore
+    return t
+
+def mask(t : torch.Tensor, rulebook : Rulebook) -> torch.Tensor:
+    return t.where(rulebook.mask, torch.zeros(size=(),device=t.device))
+
+class DILP(torch.nn.Module):
+    def __init__(self, norms : Norms, 
+                device : torch.device,
+                devices : Optional[List[torch.device]],
+                rulebook : Rulebook,
+                init_type : str,
+                init_size : float,
+                steps : int,
+                split : int,
+                softmax_temp : Optional[float],
+                problem : Problem
+                ):
+        super().__init__()
+        shape = rulebook.mask.shape
+        self.weights = torch.nn.Parameter(random_init(init_type, device = device, shape = list(shape), init_size = init_size, dtype = torch.float32))
+        self.rulebook = rulebook
+        self.problem = problem
+        self.norms = norms
+        self.steps = steps
+        self.split = split
+        self.devices = devices
+        self.softmax_temp = softmax_temp
+
+    def forward(self, base_val : torch.Tensor, crisp : bool = False) -> torch.Tensor:
+        if crisp:
+            w = mask(torch.nn.functional.one_hot(self.weights.max(-1)[1], self.weights.shape[-1]).to(base_val.device).float(), self.rulebook)
+        else:
+            w = masked_softmax(self.weights, self.rulebook.mask, temp = self.softmax_temp)
+        return infer(base_val,
+            rulebook=self.rulebook,
+            weights=w,
+            problem=self.problem,
+            steps=self.steps,
+            split=self.split,
+            norms=self.norms,
+            devices=self.devices)
+
 
 def squeeze_into(v : torch.Tensor, dim : int, dim2 : int) -> torch.Tensor:
     shape = list(v.shape)
@@ -160,6 +272,7 @@ def extend_val(val : torch.Tensor, vars : int = 3) -> torch.Tensor:
 def infer_single_step(ex_val : torch.Tensor, 
         rule_weights : torch.Tensor,
         split : int,
+        norms : Norms,
         ) -> torch.Tensor:
 
     rule_weights = rule_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) #atoms
@@ -181,15 +294,15 @@ def infer_single_step(ex_val : torch.Tensor,
         ex_val = ex_val - control_valve
 
         #conjuction of body predictes
-        ex_val = conjunction_body_pred(ex_val[:,:,:,0,:,:,:], ex_val[:,:,:,1,:,:,:])
+        ex_val = norms.conjunction_body_pred(ex_val[:,:,:,0,:,:,:], ex_val[:,:,:,1,:,:,:])
         #existential quantification
-        ex_val = disjunction_quantifier(ex_val, -1)
+        ex_val = norms.disjunction_quantifier(ex_val, -1)
         #disjunction on clauses
-        ex_val = disjunction_clauses(ex_val[:,:,0,:,:], ex_val[:,:,1,:,:])
+        ex_val = norms.disjunction_clauses(ex_val[:,:,0,:,:], ex_val[:,:,1,:,:])
         logging.debug(f"returning {ex_val.shape=}")
         return ex_val
     elif split == 1:
-        ex_val = conjunction_body_pred(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
+        ex_val = norms.conjunction_body_pred(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
         ex_val = squeeze_into(ex_val, 1, 2)
         logging.debug(f"ex_val big {ex_val.shape=}")
 
@@ -198,20 +311,20 @@ def infer_single_step(ex_val : torch.Tensor,
         ex_val = ex_val.sum(dim = -4)
 
         #existential quantification
-        ex_val = disjunction_quantifier(ex_val, -1)
+        ex_val = norms.disjunction_quantifier(ex_val, -1)
         #disjunction on clauses
-        ex_val = disjunction_clauses(ex_val[:,:,0,:,:], ex_val[:,:,1,:,:])
+        ex_val = norms.disjunction_clauses(ex_val[:,:,0,:,:], ex_val[:,:,1,:,:])
         logging.debug(f"returning {ex_val.shape=}")
         return ex_val
     elif split == 0:
-        ex_val = conjunction_body_pred(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
+        ex_val = norms.conjunction_body_pred(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
         ex_val = squeeze_into(ex_val, 1, 2)
 
         #existential quantification
-        ex_val = disjunction_quantifier(ex_val, -1)
+        ex_val = norms.disjunction_quantifier(ex_val, -1)
         rule_weights = rule_weights.squeeze(-1)
 
-        ex_val = disjunction_clauses(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
+        ex_val = norms.disjunction_clauses(ex_val.unsqueeze(1), ex_val.unsqueeze(2))
         ex_val = squeeze_into(ex_val, 1, 2)
 
         ex_val = ex_val.unsqueeze(0)
@@ -228,6 +341,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
         return_dev : torch.device, devices : Sequence[torch.device],
         rule_weights : torch.Tensor,
         split : int,
+        norms : Norms,
         ) -> torch.Tensor:
     pred_count : int = rule_weights.shape[0]
     per_dev = math.ceil(pred_count / len(devices))
@@ -243,8 +357,9 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
             rets.append(infer_single_step(
                 ex_val = extend_val(val.to(dev, non_blocking=True)),
                 split=split,
+                norms=norms,
                 rule_weights = rule_weights_[i]))
-        val = disjunction_steps(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
+        val = norms.disjunction_steps(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
     
     return val
 
@@ -253,6 +368,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
 def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, 
             problem : Problem,
             split : int,
+            norms : Norms,
             vars : int = 3) -> torch.Tensor:
     val = base_val
     #non-bk weights
@@ -265,6 +381,7 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
         val2 = extend_val(val, vars)
         val2 = infer_single_step(ex_val = val2, \
             split=split,
+            norms=norms,
             rule_weights = weights)
         val2 = torch.cat([bk_zeros, val2], dim=1)
         
@@ -273,7 +390,7 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
         
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
         #vals.append(val2.unsqueeze(0))
-        val = disjunction_steps(val, val2)
+        val = norms.disjunction_steps(val, val2)
     return val
 
 def infer(base_val : torch.Tensor,
@@ -282,13 +399,14 @@ def infer(base_val : torch.Tensor,
             problem : Problem,
             steps : int,
             split : int,
+            norms : Norms,
             devices : Optional[Sequence[torch.device]] = None,
             ) -> torch.Tensor:
     if devices is None:
-        return infer_steps(steps, base_val, rulebook, weights, problem, vars = 3, split=split)
+        return infer_steps(steps, base_val, rulebook, weights, problem, vars = 3, split=split, norms=norms)
     else:
         return infer_steps_on_devs(steps, base_val, weights.device, devices, split = split,
-            rule_weights=weights)
+            rule_weights=weights, norms=norms)
 
 def loss_value(values : torch.Tensor, target_type : loader.TargetType, reduce : bool = True) -> torch.Tensor:
     if len(values) == 0:
@@ -334,7 +452,7 @@ def print_program(problem : loader.Problem, weights : torch.Tensor, split : int)
         for pred in list(problem.targets) + list(problem.invented):
             pred_name = problem.predicate_name[pred]
             for clause in range(2):
-                choices = list(weights[pred,clause].max(-1).indices.cpu())
+                choices = weights[pred,clause].max(-1).indices.tolist()
                 print(clause_str(pred_name, choices[0], choices[1], problem))
     elif split == 1:
         for pred in list(problem.targets) + list(problem.invented):

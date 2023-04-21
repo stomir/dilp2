@@ -15,17 +15,17 @@ import torcher
 import sys
 import traceback
 import plot
-from torch.utils.tensorboard import SummaryWriter
 from collections import defaultdict
 from flipper import Flipper
 import torch.nn.functional as F
 
-def mask(t : torch.Tensor, rulebook : dilp.Rulebook) -> torch.Tensor:
-    return t.where(rulebook.mask, torch.zeros(size=(),device=t.device))
-
 def masked_softmax(t : torch.Tensor, mask : torch.Tensor, temp : Optional[float]) -> torch.Tensor:
-    if temp is None:
-        t = t.where(mask, torch.as_tensor(0, device=t.device))
+    if temp is None or temp == 0.:
+        t = t.where(mask, torch.as_tensor(0., device=t.device))
+        if temp is not None:
+            print(f'1 {t=}')
+            t = t / torch.max(t.sum(dim = -1, keepdim=True), torch.as_tensor(1e-3, device=t.device))
+            print(f'2 {t=}')
     else:
         t = t.where(mask, torch.as_tensor(-float('inf'), device=t.device)).softmax(-1)
         t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device)) #type: ignore
@@ -40,17 +40,15 @@ def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) ->
     other_values = [dilp.extract_targets(val, idxs).unsqueeze(1) for val in vals]
 
     return torch.cat([target_values] + other_values, dim=1)
-
-def random_init(init : str, device : torch.device, shape : List[int], init_size : float, dtype) -> torch.Tensor:
-    if init == 'normal':
-        return torch.normal(mean=torch.zeros(size=shape, device=device, dtype=dtype), std=init_size)
-    elif init == 'uniform':
-        return torch.rand(size=shape, device=device, dtype=dtype) * init_size
-    elif init == 'discrete':
-        return F.one_hot(torch.randint(low=0, high=shape[-1], size=shape[:-1], device=device), num_classes = shape[3]).float()
-    else:
-        raise RuntimeError(f'unknown init: {init}')
     
+def clip_parameters(params : Iterable[torch.nn.Parameter], min_parameter : Optional[float], max_parameter : Optional[float]) -> None:
+    if min_parameter is not None or max_parameter is not None:
+        with torch.no_grad():
+            for param in params:
+                if min_parameter is not None:
+                    param[:] = torch.max(param, torch.as_tensor(min_parameter, device=param.device))
+                if max_parameter is not None:
+                    param[:] = torch.min(param, torch.as_tensor(max_parameter, device=param.device))
 
 def main(task : str, 
         epochs : int, steps : int, 
@@ -77,7 +75,6 @@ def main(task : str,
         devices : Optional[List[int]] = None,
         entropy_gradient_ratio : Optional[float] = None,
         input : Optional[str] = None, output : Optional[str] = None,
-        tensorboard : Optional[str] = None,
         use_float64 : bool = False,
         use_float16 : bool = False,
         checkpoint : Optional[str] = None,
@@ -91,11 +88,11 @@ def main(task : str,
         plot_interval : int = 100,
         softmax_temp : Optional[float] = 1.0,
         norm_p : float = 1.0,
-        true_init_bias : float = 0.0,
         target_copies : int = 0,
         split : int = 2,
         min_parameter : Optional[float] = None,
         max_parameter : Optional[float] = None,
+        compile : bool = True,
         **rules_args):
     if info:
         logging.getLogger().setLevel(logging.INFO)
@@ -136,15 +133,14 @@ def main(task : str,
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed) #type: ignore
 
-    dilp.set_norm(norm, p = norm_p)
     dev = torch.device(cuda if type(cuda) == int else 0) if cuda or cuda == 0 else torch.device('cpu')
 
     logging.info(f'{dev=}')
 
-    if tensorboard is not None:
-        tb : Optional[SummaryWriter] = SummaryWriter(log_dir=tensorboard, comment=' '.join(sys.argv))
-    else:
-        tb = None
+    # if tensorboard is not None:
+    #     tb : Optional[SummaryWriter] = SummaryWriter(log_dir=tensorboard, comment=' '.join(sys.argv))
+    # else:
+    #     tb = None
 
     if devices is None:
         devs : Optional[List[torch.device]] = None
@@ -179,13 +175,24 @@ def main(task : str,
 
     shape = rulebook.mask.shape
 
-    weights : torch.nn.Parameter = torch.nn.Parameter(random_init(init, device = dev, shape = list(shape), init_size = init_size, dtype = dtype))
-    params : Sequence[torch.nn.Parameter] = [weights]
+    module = dilp.DILP(
+        norms=dilp.Norms.from_name(norm, p=norm_p),
+        device=dev,
+        devices=[torch.device(i) for i in devices] if devices is not None else None,
+        rulebook=rulebook,
+        init_type=init,
+        init_size=init_size,
+        steps=steps,
+        split=split,
+        softmax_temp=softmax_temp,
+        problem=problem)
+
+    module_opt = torch.compile(module) if compile else module
+
+    params : Sequence[torch.nn.Parameter] = list(module.parameters())
     epoch : int = 0
 
-    if true_init_bias != 0.0:
-        with torch.no_grad():
-            weights[:,:,:,9*problem.predicate_number['$true']] += true_init_bias
+    clip_parameters(params, min_parameter, max_parameter)
 
     #opt = torch.optim.SGD([weights], lr=1e-2)
     if optim == 'rmsprop':
@@ -203,12 +210,11 @@ def main(task : str,
     entropy_weight_in_use = 0.0 if entropy_enable_threshold is not None else 1.0
 
     if input is not None:
-        w, opt_sd, epoch, entropy_enabled, entropy_weight_in_use = torch.load(input)
-        with torch.no_grad():
-            weights[:] = w.to(dev)
+        dilp_sd, opt_sd, epoch, entropy_enabled, entropy_weight_in_use = torch.load(input)
+        module.load_state_dict(dilp_sd)
         opt.load_state_dict(opt_sd)
         logging.info(f'loaded weights from `{input}`')
-        del w, opt_sd
+        del dilp_sd, opt_sd
         
 
     for _ in (tq := tqdm(range(0, int(epochs)))):
@@ -226,10 +232,8 @@ def main(task : str,
         try:
             target_losses : List[float] = []
             for i, batch in enumerate(worlds_batches):
-                ws = masked_softmax(weights, rulebook.mask, temp = softmax_temp)
 
-                vals = dilp.infer(base_val = batch.base_val, rulebook = rulebook, problem = problem,
-                            weights = ws, steps=steps, devices = devs, split=split)
+                vals = module_opt(batch.base_val) #type: ignore
 
                 #assert (vals < 0).sum() == 0 and (vals > 1).sum() == 0, f"{(vals < 0).sum()=} {(vals > 1).sum()=} {i=} {steps=} {devices=} {vals.max()=}"
 
@@ -290,12 +294,12 @@ def main(task : str,
             if entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
                 entropy_enabled = True
             
-            entropy_loss : torch.Tensor = norm_loss(mask(weights, rulebook))
-            entropy_loss = mask(entropy_loss, rulebook)
+            entropy_loss : torch.Tensor = norm_loss(dilp.mask(module.weights, rulebook))
+            entropy_loss = dilp.mask(entropy_loss, rulebook)
             actual_entropy = entropy_loss.mean()
             if entropy_enabled:
                 if entropy_gradient_ratio is not None:
-                    entropy_loss = entropy_loss * entropy_gradient_ratio * weights.norm(p=2, dim=-1, keepdim=True)
+                    entropy_loss = entropy_loss * entropy_gradient_ratio * module.weights.norm(p=2, dim=-1, keepdim=True)
                 entropy_loss = entropy_loss.mean()
                 if entropy_weight_in_use < 1.0 and entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
                     entropy_weight_in_use += entropy_weight_step
@@ -307,30 +311,24 @@ def main(task : str,
                 break
 
             if clip is not None:
-                torch.nn.utils.clip_grad_value_([weights], clip)
+                torch.nn.utils.clip_grad_value_([module.weights], clip)
 
             opt.step()
 
-            if min_parameter is not None or max_parameter is not None:
-                with torch.no_grad():
-                    for param in params:
-                        if min_parameter is not None:
-                            param[:] = torch.max(param, torch.as_tensor(min_parameter, device=param.device))
-                        if max_parameter is not None:
-                            param[:] = torch.min(param, torch.as_tensor(max_parameter, device=param.device))
+            clip_parameters(params, min_parameter, max_parameter)
 
             # if rerandomize != 0 and (epoch-1) % int(rerandomize_interval) == 0:
             #     with torch.no_grad():
             #         weights[:] = weights * (1 - rerandomize) + random_init(init, dev, shape, init_size, dtype) * rerandomize
 
             if plot_output is not None and (epoch-1) % int(plot_interval) == 0:
-                plot.weights_plot(weights, outdir=plot_output, epoch = epoch)
+                plot.weights_plot(module.weights, outdir=plot_output, epoch = epoch)
 
             #adjust_weights(weights)
         except AssertionError as e:
             weights_file : str = output + "_faulty" if output is not None else "faulty_weights"
             logging.error(f"assertion during backprop, saving weights to {weights_file}\n{traceback.format_exc()}")
-            torch.save(weights.detach(), weights_file)
+            torch.save(module.state_dict(), weights_file)
             raise e
         
         report = {'entropy' : actual_entropy.item(), 'b_loss' : loss_sum, 
@@ -338,16 +336,16 @@ def main(task : str,
                 #'avg_val' : avg_vals,
                 #'entropy_weight' : entropy_weight_in_use * entropy_weight,
                 }
-        tq.set_postfix(**report)
-        if tb is not None:
-            tb.add_scalars("train", 
-                report,
-                global_step=epoch)
+        tq.set_postfix(**report) #type: ignore
+        # if tb is not None:
+        #     tb.add_scalars("train", 
+        #         report,
+        #         global_step=epoch)
 
-    dilp.print_program(problem, mask(weights, rulebook), split=split)
+    dilp.print_program(problem, dilp.mask(module.weights, rulebook), split=split)
 
     if output is not None:
-        torch.save((weights.detach().cpu(), opt.state_dict(), epoch, entropy_enabled, entropy_weight_in_use), output)
+        torch.save((module.state_dict(), opt.state_dict(), epoch, entropy_enabled, entropy_weight_in_use), output)
         logging.info(f"saved weights to `{output}`")
     
     if validate:
@@ -358,8 +356,6 @@ def main(task : str,
             if validate_on_cpu:
                 dev = torch.device('cpu')
                 devs = None
-                
-            ws = masked_softmax(weights.to(dev), rulebook.mask.to(dev), temp = softmax_temp)
             
             #chosing from target copies
             if target_copies == 0:
@@ -369,8 +365,7 @@ def main(task : str,
                 
                 for world in train_worlds:
                     vals = torcher.base_val(problem, [world], dtype=dtype).to(dev)
-                    vals = dilp.infer(base_val = vals, rulebook = rulebook, problem = problem,
-                            weights = ws, steps=steps,split=split)
+                    vals = module(base_val = vals)
                     batch = torcher.targets_batch(problem, [world], dev, dtype=dtype)
                     for original, copies in problem.target_copies.items():
                         for pred in copies + [original]:
@@ -388,20 +383,18 @@ def main(task : str,
             valid_tr_worlds = 0
             fuzzily_valid_tr_worlds = 0
             rulebook = rulebook.to(dev, non_blocking=True)
-            fuzzy_p : torch.Tensor = weights.detach().to(dev, non_blocking=True)
-            crisp = mask(torch.nn.functional.one_hot(fuzzy_p.max(-1)[1], fuzzy_p.shape[-1]).to(dev).float(), rulebook)
             if type(validation_steps) is float:
-                val_steps = int(steps * validation_steps)
+                module.steps = int(steps * validation_steps)
             else:
-                val_steps = int(validation_steps)
+                module.steps = int(validation_steps)
             for i, world in enumerate(validation_worlds):
                 batch = torcher.targets_batch(problem, [world], dev, dtype=dtype)
                 batch = batch.filter(lambda target: target[1] in chosen_targets)
                 base_val = batch.base_val.to(dev)
-                fuzzy_vals = dilp.infer(base_val, rulebook, weights = masked_softmax(fuzzy_p, rulebook.mask, softmax_temp), steps=val_steps, devices=devs, problem = problem, split=split)
+                fuzzy_vals = module(base_val)
                 logging.info(f"{fuzzy_vals.mean()=}")
 
-                crisp_vals = dilp.infer(base_val, rulebook, weights = crisp, steps=val_steps, devices=devs, problem = problem, split=split)
+                crisp_vals = module(base_val, crisp=True)
 
                 report_t = report_tensor([fuzzy_vals, crisp_vals], batch)
                 fuzzy_report = report_t[:,1]
