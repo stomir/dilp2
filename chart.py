@@ -1,5 +1,5 @@
 import fire #type: ignore
-import natsort
+import natsort #type: ignore
 from typing import *
 import os
 import numpy

@@ -356,6 +356,8 @@ def main(task : str,
             if validate_on_cpu:
                 dev = torch.device('cpu')
                 devs = None
+                module = module.to(dev)
+                module.rulebook = module.rulebook.to(dev)
             
             #chosing from target copies
             if target_copies == 0:

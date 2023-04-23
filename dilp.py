@@ -68,7 +68,6 @@ def two2dim(f : Callable[[torch.Tensor, torch.Tensor], torch.Tensor]) -> Callabl
         return l[0]
     return do
         
-
 class Norms(NamedTuple):
     conjunction_body_pred : Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = conjunction2_max
     disjunction_quantifier : Callable[[torch.Tensor, int], torch.Tensor] = disjunction_dim_max
@@ -362,8 +361,6 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
         val = norms.disjunction_steps(val, torch.cat([t.to(return_dev, non_blocking=True) for t in rets], dim=1))
     
     return val
-
-
 
 def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weights : torch.Tensor, 
             problem : Problem,
