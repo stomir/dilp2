@@ -76,7 +76,6 @@ class Norms(NamedTuple):
 
     @staticmethod
     def from_name(norm_name : str = 'max', p : float = 1.0):
-        print(f"--- NORMS FROM NAME {norm_name=}")
         if norm_name == 'max':
             return Norms(conjunction_body_pred = conjunction2_max,
                 disjunction_quantifier = disjunction_dim_max,
@@ -289,8 +288,9 @@ def infer_single_step(ex_val : torch.Tensor,
         ex_val = ex_val.sum(dim = -4)
         #ex_val = ex_val.where(ex_val.isnan().logical_not(), torch.zeros(size=(), device=ex_val.device)) #type: ignore
         
-        control_valve = torch.max(ex_val.detach()-1, torch.as_tensor(0.0, device=ex_val.device))
-        ex_val = ex_val - control_valve
+        #control_valve = torch.max(ex_val.detach()-1, torch.as_tensor(0.0, device=ex_val.device))
+        #ex_val = ex_val - control_valve
+        ex_val = weird.WeirdMin1.apply(ex_val, torch.as_tensor(1.0, device=ex_val.device))
 
         #conjuction of body predictes
         ex_val = norms.conjunction_body_pred(ex_val[:,:,:,0,:,:,:], ex_val[:,:,:,1,:,:,:])
@@ -337,13 +337,19 @@ def infer_single_step(ex_val : torch.Tensor,
 
 
 def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
+        problem : Problem,
         return_dev : torch.device, devices : Sequence[torch.device],
         rule_weights : torch.Tensor,
         split : int,
         norms : Norms,
         ) -> torch.Tensor:
+    
+    rule_weights = rule_weights[len(problem.bk):]
+    bk_zeros = torch.zeros([base_val.shape[0], len(problem.bk), base_val.shape[2], base_val.shape[3]], device = return_dev)
+    
     pred_count : int = rule_weights.shape[0]
     per_dev = math.ceil(pred_count / len(devices))
+    print(f'{pred_count=} {per_dev=}')
     
     rule_weights_ : List[torch.Tensor] = []
     for i, dev in enumerate(devices):
@@ -351,7 +357,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
 
     val = base_val
     for step in range(steps):
-        rets = []
+        rets = [bk_zeros]
         for i, dev in enumerate(devices):
             rets.append(infer_single_step(
                 ex_val = extend_val(val.to(dev, non_blocking=True)),
@@ -402,7 +408,7 @@ def infer(base_val : torch.Tensor,
     if devices is None:
         return infer_steps(steps, base_val, rulebook, weights, problem, vars = 3, split=split, norms=norms)
     else:
-        return infer_steps_on_devs(steps, base_val, weights.device, devices, split = split,
+        return infer_steps_on_devs(steps, base_val, problem, weights.device, devices, split = split,
             rule_weights=weights, norms=norms)
 
 def loss_value(values : torch.Tensor, target_type : loader.TargetType, reduce : bool = True) -> torch.Tensor:

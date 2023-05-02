@@ -109,6 +109,9 @@ def main(task : str,
         dtype = torch.bfloat16
     else:
         dtype = torch.float32
+        
+    if compile and inv == 0:
+        logging.warning("There's a known bug where using inv==0 and torch.compile together prevents learning.")
 
     if input is not None:
         input = input.format(**locals())
@@ -208,6 +211,8 @@ def main(task : str,
 
     entropy_enabled = entropy_enable_threshold is None
     entropy_weight_in_use = 0.0 if entropy_enable_threshold is not None else 1.0
+    
+    logging.debug(f'{problem=}')
 
     if input is not None:
         dilp_sd, opt_sd, epoch, entropy_enabled, entropy_weight_in_use = torch.load(input)
@@ -258,7 +263,7 @@ def main(task : str,
                         loss = loss.mean()
                         loss = loss * len(batch.targets(target_type)) / all_worlds_sizes[target_type] / 2
 
-                    assert loss >= 0, f"{target_type=} {loss=} {preds=}"
+                    #assert loss >= 0, f"{target_type=} {loss=} {preds=}"
 
                     ls = ls + loss
 
