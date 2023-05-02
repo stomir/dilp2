@@ -5,6 +5,9 @@ import math
 from typing import *
 
 class WeirdMin1(torch.autograd.Function):
+    """
+    max, but gradient is always progragated through the first argument
+    """
 
     @staticmethod
     def forward(ctx, a,b):
@@ -20,6 +23,9 @@ weirdMin1 : Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 weirdMin1 = WeirdMin1.apply #type: ignore
 
 class WeirdMax(torch.autograd.Function):
+    """
+    max, but gradient is always progragated through both arguments
+    """
 
     @staticmethod
     def forward(ctx, a,b):
@@ -29,9 +35,12 @@ class WeirdMax(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
 
-        return grad_output, grad_output
+        return grad_output / 2, grad_output / 2
 
 class WeirdMax2(torch.autograd.Function):
+    """
+    max, but gradient is proportional to input
+    """
     @staticmethod
     def forward(ctx, a,b):
         s = a + b

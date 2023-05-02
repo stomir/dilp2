@@ -19,19 +19,10 @@ from collections import defaultdict
 from flipper import Flipper
 import torch.nn.functional as F
 
-def masked_softmax(t : torch.Tensor, mask : torch.Tensor, temp : Optional[float]) -> torch.Tensor:
-    if temp is None or temp == 0.:
-        t = t.where(mask, torch.as_tensor(0., device=t.device))
-        if temp is not None:
-            print(f'1 {t=}')
-            t = t / torch.max(t.sum(dim = -1, keepdim=True), torch.as_tensor(1e-3, device=t.device))
-            print(f'2 {t=}')
-    else:
-        t = t.where(mask, torch.as_tensor(-float('inf'), device=t.device)).softmax(-1)
-        t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device)) #type: ignore
-    return t
-
 def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) -> torch.Tensor:
+    """
+    extracts inferred and expected values in a batch
+    """
     target_values = torch.cat([
         torch.ones(len(batch.positive_targets), device=vals[0].device),
         torch.zeros(len(batch.negative_targets), device=vals[0].device)]).unsqueeze(1)
@@ -42,6 +33,14 @@ def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) ->
     return torch.cat([target_values] + other_values, dim=1)
     
 def clip_parameters(params : Iterable[torch.nn.Parameter], min_parameter : Optional[float], max_parameter : Optional[float]) -> None:
+    """
+    clips parameters to given min and max values (or does nothing if given `None`)
+
+    Args:
+        params (Iterable[torch.nn.Parameter]): parameter
+        min_parameter (Optional[float]): minimum value
+        max_parameter (Optional[float]): maximum value
+    """
     if min_parameter is not None or max_parameter is not None:
         with torch.no_grad():
             for param in params:
@@ -84,7 +83,6 @@ def main(task : str,
         diversity_loss : float = 0.0,
         rerandomize : float = 0.0,
         rerandomize_interval : int = 1,
-        plot_output : Optional[str] = None,
         plot_interval : int = 100,
         softmax_temp : Optional[float] = 1.0,
         norm_p : float = 1.0,
@@ -94,6 +92,7 @@ def main(task : str,
         max_parameter : Optional[float] = None,
         compile : bool = True,
         **rules_args):
+    
     if info:
         logging.getLogger().setLevel(logging.INFO)
     if debug:
@@ -111,7 +110,8 @@ def main(task : str,
         dtype = torch.float32
         
     if compile and inv == 0:
-        logging.warning("There's a known bug where using inv==0 and torch.compile together prevents learning.")
+        logging.warning("There's a known bug where using inv==0 and torch.compile together prevents learning. Setting compile=False")
+        compile = False
 
     if input is not None:
         input = input.format(**locals())
@@ -128,6 +128,7 @@ def main(task : str,
             input = checkpoint
         output = checkpoint
 
+    #set up random seed
     if seed is not None:
         seed = int(seed)
         torch.use_deterministic_algorithms(True) #type: ignore
@@ -140,11 +141,6 @@ def main(task : str,
 
     logging.info(f'{dev=}')
 
-    # if tensorboard is not None:
-    #     tb : Optional[SummaryWriter] = SummaryWriter(log_dir=tensorboard, comment=' '.join(sys.argv))
-    # else:
-    #     tb = None
-
     if devices is None:
         devs : Optional[List[torch.device]] = None
     else:
@@ -156,11 +152,12 @@ def main(task : str,
         logging.error(f"device error {cuda=} {dev=}")
         raise e
     
-
+    #load problem definition
     dirs = [d for d in os.listdir(task) if os.path.isdir(os.path.join(task, d))]
     logging.info(f'{dirs=}')
     problem = loader.load_problem(os.path.join(task, dirs[0]), invented_count=inv, target_copies=target_copies)
 
+    #find training and validation worlds
     train_worlds = [loader.load_world(os.path.join(task, d), problem = problem, train = True) for d in dirs if d.startswith('train')]
     validation_worlds = [loader.load_world(os.path.join(task, d), problem = problem, train = False) for d in dirs if d.startswith('val')] \
                         + (train_worlds if validate_training else [])
@@ -168,16 +165,15 @@ def main(task : str,
     if training_worlds is not None:
         train_worlds = train_worlds[:training_worlds]
 
+    #split training data into batches
     worlds_batches : Sequence[torcher.WorldsBatch] = [torcher.targets_batch(problem, worlds, dev, dtype) for worlds in torcher.chunks(worlds_batch_size, train_worlds)]
-    choices : Sequence[numpy.ndarray] = [numpy.concatenate([numpy.repeat(i, len(batch.targets(target_type).idxs)) for i, batch in enumerate(worlds_batches)]) for target_type in loader.TargetType]
 
-    #This should not be used. Instead one of the dictionaries should be used.
-    #pred_names = list(pred_dict_rev.keys())
-
+    #prepare rules
     rulebook = torcher.rules(problem, dev, split = split, **rules_args)
 
     shape = rulebook.mask.shape
 
+    #set up torch module
     module = dilp.DILP(
         norms=dilp.Norms.from_name(norm, p=norm_p),
         device=dev,
@@ -197,7 +193,7 @@ def main(task : str,
 
     clip_parameters(params, min_parameter, max_parameter)
 
-    #opt = torch.optim.SGD([weights], lr=1e-2)
+    #set up optimizer
     if optim == 'rmsprop':
         opt : torch.optim.Optimizer = torch.optim.RMSprop(params, lr=lr)
     elif optim == 'adam':
@@ -214,6 +210,7 @@ def main(task : str,
     
     logging.debug(f'{problem=}')
 
+    #load weights if necessary
     if input is not None:
         dilp_sd, opt_sd, epoch, entropy_enabled, entropy_weight_in_use = torch.load(input)
         module.load_state_dict(dilp_sd)
@@ -226,6 +223,7 @@ def main(task : str,
         epoch += 1
         opt.zero_grad()
 
+        #choose which examples are going to be counted
         chosen_per_world_batch : Dict[loader.TargetType, Sequence[torch.Tensor]] = dict((ttype, 
                             [(torch.rand(len(batch.targets(ttype)), device=dev) <= batch_size) for batch in worlds_batches]) for ttype in loader.TargetType)
         chosen_per_ttype : Dict[loader.TargetType, int] = dict((ttype, sum(int(c.sum().item()) for c in chosen_per_world_batch[ttype])) for ttype in loader.TargetType)
@@ -238,12 +236,12 @@ def main(task : str,
             target_losses : List[float] = []
             for i, batch in enumerate(worlds_batches):
 
+                #compute inference
                 vals = module_opt(batch.base_val) #type: ignore
-
-                #assert (vals < 0).sum() == 0 and (vals > 1).sum() == 0, f"{(vals < 0).sum()=} {(vals > 1).sum()=} {i=} {steps=} {devices=} {vals.max()=}"
 
                 ls = torch.as_tensor(0.0, device=dev)
                 one_target_loss = 0.0
+                #get positive and negative loss
                 for target_type in loader.TargetType:
                     targets : torch.Tensor = batch.targets(target_type).idxs.to(dev, non_blocking=False)
                     preds = dilp.extract_targets(vals, targets)
@@ -251,34 +249,30 @@ def main(task : str,
 
                     one_target_loss += loss.detach().mean().item() / 2
 
-                    if type(batch_size) is float:
-                        chosen = chosen_per_world_batch[target_type][i]
-                        #chosen = torch.from_numpy(chosen_here).to(dev, non_blocking=False)
-                        if chosen.sum() != 0:
-                            loss = (loss.where(chosen, torch.zeros(size=(), device=loss.device)).sum()) / chosen.sum()
-                            loss = loss * int(chosen.sum().item()) / chosen_per_ttype[target_type] / 2
-                        else:
-                            loss = torch.zeros(size=(), device=loss.device)
+                    chosen = chosen_per_world_batch[target_type][i]
+                    if chosen.sum() != 0:
+                        loss = (loss.where(chosen, torch.zeros(size=(), device=loss.device)).sum()) / chosen.sum()
+                        loss = loss * int(chosen.sum().item()) / chosen_per_ttype[target_type] / 2
                     else:
-                        loss = loss.mean()
-                        loss = loss * len(batch.targets(target_type)) / all_worlds_sizes[target_type] / 2
-
-                    #assert loss >= 0, f"{target_type=} {loss=} {preds=}"
+                        loss = torch.zeros(size=(), device=loss.device)
 
                     ls = ls + loss
 
-                #ls = ls 
+                #store total loss (not limited to choices for this batch)
                 target_losses.append(one_target_loss)
 
                 assert ls >= 0
 
+                #optionally apply experimental auxiliary loss
                 if truth_loss != 0.0:
                     ls = ls + vals.mean(0).sum(0).mean(0).mean(0) * truth_loss
 
+                #optionally apply experimental auxiliary loss
                 if diversity_loss != 0.0:
                     print(f"{vals.shape=}")
                     ls = ls + (vals.unsqueeze(2) - vals.unsqueeze(1)).square().mean(0).sum(0).mean(0).mean(0).mean(0) * diversity_loss
                 
+                #backpropagate
                 if ls != 0.0:
                     ls.backward()
                 loss_sum += ls.item()
@@ -287,10 +281,10 @@ def main(task : str,
                 del loss, vals, targets, preds, ls
                 torch.cuda.empty_cache()
             
+            #optionally apply experimental auxiliary loss
             if normalize_gradients is not None:
                 with torch.no_grad():
                     for fuzzy in params:
-                        #w /= w.sum(-1, keepdim=True) * w.sign()
                         if fuzzy.grad is not None:
                             logging.info(f"{fuzzy.grad.norm(2)=}")
                             fuzzy.grad[:] = torch.nn.functional.normalize(fuzzy.grad, dim=-1)
@@ -311,25 +305,21 @@ def main(task : str,
                 entropy_loss = entropy_loss * entropy_weight_in_use * entropy_weight
                 entropy_loss.backward()
 
+            #compute total loss
             target_loss = sum(target_losses) / len(target_losses)
             if end_early is not None and target_loss < end_early:
                 break
 
+            #clip gradients
             if clip is not None:
                 torch.nn.utils.clip_grad_value_([module.weights], clip)
 
+            #perform optimization step
             opt.step()
 
+            #optionally clip weights
             clip_parameters(params, min_parameter, max_parameter)
 
-            # if rerandomize != 0 and (epoch-1) % int(rerandomize_interval) == 0:
-            #     with torch.no_grad():
-            #         weights[:] = weights * (1 - rerandomize) + random_init(init, dev, shape, init_size, dtype) * rerandomize
-
-            if plot_output is not None and (epoch-1) % int(plot_interval) == 0:
-                plot.weights_plot(module.weights, outdir=plot_output, epoch = epoch)
-
-            #adjust_weights(weights)
         except AssertionError as e:
             weights_file : str = output + "_faulty" if output is not None else "faulty_weights"
             logging.error(f"assertion during backprop, saving weights to {weights_file}\n{traceback.format_exc()}")
@@ -338,33 +328,30 @@ def main(task : str,
         
         report = {'entropy' : actual_entropy.item(), 'b_loss' : loss_sum, 
                 'loss' : target_loss,
-                #'avg_val' : avg_vals,
-                #'entropy_weight' : entropy_weight_in_use * entropy_weight,
                 }
         tq.set_postfix(**report) #type: ignore
-        # if tb is not None:
-        #     tb.add_scalars("train", 
-        #         report,
-        #         global_step=epoch)
 
+    #print final program
     dilp.print_program(problem, dilp.mask(module.weights, rulebook), split=split)
 
     if output is not None:
         torch.save((module.state_dict(), opt.state_dict(), epoch, entropy_enabled, entropy_weight_in_use), output)
         logging.info(f"saved weights to `{output}`")
     
+    #perform validation
     if validate:
         with torch.no_grad():
             last_target = target_loss
             last_entropy = actual_entropy.item()
             
+            #optionally switch to computing on CPU
             if validate_on_cpu:
                 dev = torch.device('cpu')
                 devs = None
                 module = module.to(dev)
                 module.rulebook = module.rulebook.to(dev)
             
-            #chosing from target copies
+            #choose a target copy to use as an answer (optionally)
             if target_copies == 0:
                 chosen_targets : Set[int] = problem.targets
             else:
@@ -385,6 +372,7 @@ def main(task : str,
                     logging.info(f'{problem.predicate_name[original]}: chosen copy was {problem.predicate_name[choice]}')
                     chosen_targets.add(choice)
             
+            #compute validation
             valid_worlds = 0
             fuzzily_valid_worlds = 0
             valid_tr_worlds = 0
@@ -426,13 +414,6 @@ def main(task : str,
                     '    FAIL     '
             print(f'result: {result} {valid_worlds=} {fuzzily_valid_worlds=} ' +
                     f' {last_target=} {last_entropy=} {epoch=}')
-
-def adjust_weights(weights : List[torch.nn.Parameter]):
-    with torch.no_grad():
-            for w in weights:
-                a = torch.max(torch.zeros(size=(), device=w.device), w)
-                w[:] = a / a.sum(dim=1, keepdim=True)
-                #assert (w.sum(-1) == 1).all(), f"{w.sum(-1)=}"
 
 def norm_loss(weights : torch.Tensor) -> torch.Tensor:
     x = weights
