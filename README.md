@@ -1,21 +1,25 @@
-# δILP2 
+# δILP2
+
 a differentiable ILP system using high-deimensional search space
 
-## Usage 
+## Usage
+
 Example usage (with CUDA acceleration):
 
-```
+```bash
 python3 run.py examples/arith_even --inv 20 --steps 20 --epochs 1000 --batch_size 0.5 --cuda True
 ```
 
 Using multiple GPUs:
-```
+
+```bash
 python3 run.py examples/arith_even --inv 20 --steps 20 --epochs 1000 --batch_size 0.5 --cuda False --devices 0,1,2,3
 ```
 
 ## Arguments
 
 More flags can be found in the `run.py` file, as arguments of the `main` function:
+
 ```python
         task : str, 
         epochs : int, steps : int, 
@@ -45,7 +49,9 @@ More flags can be found in the `run.py` file, as arguments of the `main` functio
         validate_on_cpu : bool = True,
         training_worlds : Optional[int] = None,
 ```
+
 and in `torcher.py` as arguments of the `rules` function:
+
 ```python
             layers : Optional[List[int]] = None,
             unary : List[str] = [],
@@ -55,7 +61,9 @@ and in `torcher.py` as arguments of the `rules` function:
 ```
 
 ## Running in bulk
+
 You can use `batchrun.sh` script to run the script multiple times using `slurm` and aggregate the results:
+
 ```bash
 bash batchsize.sh 100 examples/arith_even --inv 20 --steps 20 --epochs 1000 --batch_size 0.5 --outdir even_results
 ```

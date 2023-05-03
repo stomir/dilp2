@@ -67,10 +67,32 @@ class Rulebook(NamedTuple):
 T = TypeVar('T')
 
 def chunks(n : int, seq : Sequence[T]) -> Iterable[Sequence[T]]:
+    """
+    splits the sequence into chunks of length `n`
+
+    Args:
+        n (int): length of chunks
+        seq (Sequence[T]): input sequence
+
+    Returns:
+        Iterable[Sequence[T]]: generator of sequences of length `n`
+
+    """
     for i in range(0, len(seq), n):
         yield seq[i:i+n]
 
 def base_val(problem : Problem, worlds : Sequence[World], dtype) -> torch.Tensor:
+    """
+    creates valuation tensor with background knowledge of a problem
+
+    Args:
+        problem (Problem): problem description
+        worlds (Sequence[World]): worlds to be included
+        dtype (_type_): type to returned tensor
+
+    Returns:
+        torch.Tensor: valuation tensor with background knowledge of a problem
+    """
     atom_count = max(len(w.atoms) for w in worlds)
     ret = torch.zeros(size = [len(worlds), len(problem.predicate_name), atom_count, atom_count], dtype = dtype)
     for i, world in enumerate(worlds):
@@ -81,15 +103,47 @@ def base_val(problem : Problem, worlds : Sequence[World], dtype) -> torch.Tensor
     return ret
 
 def targets_iter(worlds : Sequence[World], target_type : TargetType) -> Iterable[Sequence[int]]:
+    """
+    an iterable of lists of coordinates of training examples
+
+    Args:
+        worlds (Sequence[World]): worlds to get targets for
+        target_type (TargetType): whether to get positive of negative examples
+
+    Returns:
+        Iterable[Sequence[int]]: coordinates of training examples
+    """
     for i, world in enumerate(worlds):
         targets = world.positive if target_type == TargetType.POSITIVE else world.negative
         for target in targets:
             yield [i] + list(target)
 
 def targets(worlds : Sequence[World], target_type : TargetType) -> torch.Tensor:
+    """
+    a tensor containing coordinates of training examples
+
+    Args:
+        worlds (Sequence[World]): worlds to get targets for
+        target_type (TargetType): whether to get positive of negative examples
+
+    Returns:
+        torch.Tensor: coordinates of training examples
+    """
     return torch.as_tensor(list(targets_iter(worlds, target_type)), dtype=torch.long)
 
 def targets_batch(problem : Problem, worlds : Sequence[World], device : torch.device, dtype) -> WorldsBatch:
+    """
+    prepare a batch out of a sequence of worlds
+
+    Args:
+        problem (Problem): problem description
+        worlds (Sequence[World]): sequence of worlds
+        device (torch.device): what device to put output tensors on
+        dtype (_type_): what type should tensors be
+
+    Returns:
+        WorldsBatch: prepared batch of worlds
+    """
     positive_targets = targets(worlds, TargetType.POSITIVE)
     negative_targets = targets(worlds, TargetType.NEGATIVE)
     return WorldsBatch(
@@ -104,66 +158,41 @@ def targets_batch(problem : Problem, worlds : Sequence[World], device : torch.de
         )
     )
 
-def merge_pad(ts : List[torch.Tensor], dim : int = 0, newdim : int = 0) -> torch.Tensor:
-    max_len = max(len(t) for t in ts)
-    def required_shape(t : torch.Tensor) -> List[int]:
-        ret = list(t.shape)
-        ret[dim] = max_len - ret[dim]
-        return ret
-    ts = list(torch.cat((t, torch.zeros(size=required_shape(t), device=t.device, dtype=t.dtype)), dim=dim).unsqueeze(newdim) for t in ts)
-    return torch.cat(ts, dim=newdim)
-
-def merge_mask(ts : List[torch.Tensor], dim : int = 0, newdim : int = 0) -> torch.Tensor:
-    max_len = max(len(t) for t in ts)
-    def required_shape(t : torch.Tensor) -> List[int]:
-        ret = list(t.shape)
-        ret[dim] = max_len - ret[dim]
-        return ret
-    ts = list(torch.cat((torch.ones_like(t), 
-        torch.as_tensor(-float('inf'), device=t.device).repeat(required_shape(t))), dim=dim).unsqueeze(newdim) for t in ts)
-    return torch.cat(list(ts), dim=newdim)
-
-def chv(n : int) -> str:
-    return chr(ord('A')+n)
-
-def add_invented_types(problem : Problem):
-    if (all(inv in problem.types for inv in problem.invented)):
-        return #invented types laready there
-    for inv, t in zip(sorted(problem.invented), itertools.cycle(itertools.product(problem.all_types, problem.all_types, problem.all_types))):
-        problem.types[inv] = list(t)
-
 def rules(problem : Problem, 
             dev : torch.device,
             split : int = 2,
-            layers : Optional[List[int]] = None,
             unary : List[str] = [],
             recursion : bool = True, 
             invented_recursion : bool = True,
-            use_types : bool = False,
-            random_c_in_target : bool = True,
-            full_rules : bool = False,
             allow_cross_targets : bool = True,
+            full_rules : bool = False,
         ) -> Rulebook:
+    """
+    prepares rule weights, optionally applying a language bias mask
+    
+    note: language bias arguments only work for split 2
 
-    if layers is None:
-        layer_dict : Dict[int, int] = dict()
-    else:
-        layer_dict = dict(zip(problem.invented, sum(([i for _ in range(layer)] for i, layer in enumerate(layers)), start=[])))
+    Args:
+        problem (Problem): problem description
+        dev (torch.device): device to put tensors on
+        split (int, optional): how is the program split. Defaults to 2.
+        unary (List[str], optional): list of predicates to be treated as unary. Defaults to [].
+        recursion (bool, optional): should recusion be allowed. Defaults to True.
+        full_rules (bool, optional): overrides and removed all language bias. Defaults to False.
+        allow_cross_targets (bool, optional): whether to allow target copies to call each other. Defaults to True.
 
+    Raises:
+        NotImplementedError: if given split other than {0,1,2}
+
+    Returns:
+        Rulebook: prepared rulebook
+    """
+    
     pred_dim = len(problem.predicate_name)
 
     unary_preds = set(problem.predicate_number[name] for name in unary)
 
     rev_pred = problem.predicate_name
-
-    #ret = -torch.ones(size=(pred_dim, 2, 2, pred_dim * 3 * 3, 2), dtype=torch.long)
-
-    if use_types:
-        add_invented_types(problem)
-
-        if random_c_in_target:
-            for target in problem.targets:
-                problem.types[target][2] = random.choice(list(problem.all_types))
                 
     parent_target : Dict[int, int] = dict()
     for original, copies in problem.target_copies.items():
@@ -186,10 +215,8 @@ def rules(problem : Problem,
                                         or (p in unary_preds and a != b) #calling unary with two different arguments
                                         or (not recursion and head == p) #recursion disabled
                                         or (not invented_recursion and head in problem.invented and p in {head, 0}) #recursion of inventeds disabled
-                                        or (layers is not None and head in problem.invented and p != head and p in problem.invented and layer_dict[head]+1 != layer_dict[p]) # continue
-                                        or (layers is not None and head == 0 and p in problem.invented and layer_dict[p] != 0) #main pred only calls first layer
-                                        or (not allow_cross_targets and head != p and head in parent_target and p in parent_target and parent_target[head] == parent_target[p]) # continue               
-                                        or (not allow_cross_targets and head in problem.invented and p in parent_target)): # continue
+                                        or (not allow_cross_targets and head != p and head in parent_target and p in parent_target and parent_target[head] == parent_target[p])
+                                        or (not allow_cross_targets and head in problem.invented and p in parent_target)):
 
                                         ret[head,clause,body_position,i] = False
     elif split == 1:
@@ -202,8 +229,7 @@ def rules(problem : Problem,
                         for i, (p1, a1, b1, p2, a2, b2) in enumerate(itertools.product(range(pred_dim),range(3),range(3),range(pred_dim),range(3),range(3))):
                             if (p1, a1, b1) == (head, 0, 1) \
                                 or (p2, a2, b2) == (head, 0, 1): 
-                                    ret[head,clause,i] = False
-                                    continue #self recursion
+                                    ret[head,clause,i] = False #self recursion
 
     elif split == 0:
         ret = torch.ones(size=(pred_dim, (pred_dim * 3 * 3) ** 4), dtype=torch.bool)
@@ -219,8 +245,7 @@ def rules(problem : Problem,
                                 or (c2p1, c2a1, c2b1) == (head, 0, 1) \
                                 or (c2p2, c2a2, c2b2) == (head, 0, 1) \
                                 or (c1p2, c1a2, c1b2) == (head, 0, 1): 
-                                    ret[head,i] = False
-                                    #self recursion
+                                    ret[head,i] = False #self recursion
 
     else:
         raise NotImplementedError(f'wrong {split=}')
