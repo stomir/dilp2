@@ -14,7 +14,6 @@ import loader
 import torcher
 import sys
 import traceback
-import plot
 from collections import defaultdict
 from flipper import Flipper
 import torch.nn.functional as F
@@ -62,8 +61,8 @@ def main(task : str,
         info : bool = False,
         entropy_enable_threshold : Optional[float] = None,
         normalize_gradients : Optional[float] = None,
-        init : str = 'normal',
-        init_size : float = 1.0,        
+        init : str = 'uniform',
+        init_size : float = 10.0,        
         entropy_weight_step = 1.0,
         end_early : Optional[float] = 1e-3,
         seed : Optional[int] = None,

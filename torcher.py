@@ -65,7 +65,6 @@ class Rulebook(NamedTuple):
         )
 
 T = TypeVar('T')
-
 def chunks(n : int, seq : Sequence[T]) -> Iterable[Sequence[T]]:
     """
     splits the sequence into chunks of length `n`

@@ -1,4 +1,3 @@
-from sys import exec_prefix
 import torch
 import logging
 import math

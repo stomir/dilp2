@@ -1,9 +1,0 @@
-head(la, a).
-tail(la, l).
-head(lba, b).
-tail(lba, la).
-head(lcba, c).
-tail(lcba, lba).
-head(lc, c).
-tail(lc, l).
-empty(l, l).
