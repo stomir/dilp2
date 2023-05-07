@@ -23,13 +23,16 @@ More flags can be found in the `run.py` file, as arguments of the `main` functio
 ```python
         task : str, 
         epochs : int, steps : int, 
-        batch_size : Optional[Union[int, float]],
-        cuda : Union[int,bool] = False, inv : int = 0,
-        debug : bool = False, norm : str = 'mixed',
+        batch_size : float = 0.5,
+        cuda : Union[int,bool] = False,
+        inv : int = 0,
+        debug : bool = False,
+        norm : str = 'mixed',
         entropy_weight : float = 0.0,
-        optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
+        optim : str = 'adam', lr : float = 0.05,
+        clip : Optional[float] = None,
         info : bool = False,
-        entropy_enable_threshold : Optional[float] = 1e-2,
+        entropy_enable_threshold : Optional[float] = None,
         normalize_gradients : Optional[float] = None,
         init : str = 'normal',
         init_size : float = 1.0,        
@@ -43,21 +46,23 @@ More flags can be found in the `run.py` file, as arguments of the `main` functio
         devices : Optional[List[int]] = None,
         entropy_gradient_ratio : Optional[float] = None,
         input : Optional[str] = None, output : Optional[str] = None,
-        tensorboard : Optional[str] = None,
         use_float64 : bool = False,
+        use_float16 : bool = False,
         checkpoint : Optional[str] = None,
         validate_on_cpu : bool = True,
         training_worlds : Optional[int] = None,
-```
-
-and in `torcher.py` as arguments of the `rules` function:
-
-```python
-            layers : Optional[List[int]] = None,
-            unary : List[str] = [],
-            recursion : bool = True, 
-            invented_recursion : bool = True,
-            full_rules : bool = False,
+        truth_loss : float = 0.0,
+        diversity_loss : float = 0.0,
+        rerandomize : float = 0.0,
+        rerandomize_interval : int = 1,
+        plot_interval : int = 100,
+        softmax_temp : Optional[float] = 1.0,
+        norm_p : float = 1.0,
+        target_copies : int = 0,
+        split : int = 2,
+        min_parameter : Optional[float] = None,
+        max_parameter : Optional[float] = None,
+        compile : bool = True,
 ```
 
 ## Running in bulk
