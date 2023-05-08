@@ -186,7 +186,7 @@ def rules(problem : Problem,
     Returns:
         Rulebook: prepared rulebook
     """
-    
+        
     pred_dim = len(problem.predicate_name)
 
     unary_preds = set(problem.predicate_number[name] for name in unary)

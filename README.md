@@ -7,21 +7,23 @@ a differentiable ILP system using high-deimensional search space
 Example usage (with CUDA acceleration):
 
 ```bash
-python3 run.py examples/arith_even --inv 20 --steps 20 --epochs 1000 --batch_size 0.5 --cuda True
+python3 run.py examples/arith_even --inv=20 --steps=25 --epochs=2000 --batch_size=0.5 --cuda=True
 ```
 
 Using multiple GPUs:
 
 ```bash
-python3 run.py examples/arith_even --inv 20 --steps 20 --epochs 1000 --batch_size 0.5 --cuda False --devices 0,1,2,3
+python3 run.py examples/arith_even --inv=20 --steps=20 --epochs 1000 --batch_size=0.5 --cuda=False --devices=0,1,2,3
 ```
+
+By default, δILP2 uses `torch.compile` to optimize computations. This sometimes causes problems. If necessary, use `--compile=False`.
 
 ## Arguments
 
 More flags can be found in the `run.py` file, as arguments of the `main` function:
 
 ```python
-        task : str, 
+task : str, 
         epochs : int, steps : int, 
         batch_size : float = 0.5,
         cuda : Union[int,bool] = False,
@@ -34,8 +36,8 @@ More flags can be found in the `run.py` file, as arguments of the `main` functio
         info : bool = False,
         entropy_enable_threshold : Optional[float] = None,
         normalize_gradients : Optional[float] = None,
-        init : str = 'normal',
-        init_size : float = 1.0,        
+        init : str = 'uniform',
+        init_size : float = 10.0,        
         entropy_weight_step = 1.0,
         end_early : Optional[float] = 1e-3,
         seed : Optional[int] = None,
@@ -55,7 +57,6 @@ More flags can be found in the `run.py` file, as arguments of the `main` functio
         diversity_loss : float = 0.0,
         rerandomize : float = 0.0,
         rerandomize_interval : int = 1,
-        plot_interval : int = 100,
         softmax_temp : Optional[float] = 1.0,
         norm_p : float = 1.0,
         target_copies : int = 0,
