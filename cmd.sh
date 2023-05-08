@@ -1,1 +1,0 @@
-((for i in {5..100..5}; do let j="100-$i"; echo $i $j; bash batchrun.sh 100 examples/arith_buzz/ --inv $j --target_copies $i --steps 25 --epochs 5000 --validate_on_cpu False -s '--gpus-per-node 1 --nice=100 -p IFIgpu2070S' --cuda True --init uniform --init_size 10 --allow_cross_targets True --outdir ~/scratch/dilp/multitarget_buzz_e_$i; done )&)
