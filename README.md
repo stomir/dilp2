@@ -1,6 +1,6 @@
 # δILP2
 
-a differentiable ILP system using high-deimensional search space
+This repository contains an implementation of the method outlined in "Differentiable Inductive Logic Programming in High-Dimensional Space" (see https://arxiv.org/abs/2208.06652). Our implementation is based on https://github.com/ai-systems/DILP-Core and the method presented in "Learning Explanatory Rules from Noisy Data" (see https://arxiv.org/abs/1711.04574). Our System extends δILP by large-scale predicate invention. 
 
 ## Usage
 
