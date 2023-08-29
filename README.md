@@ -65,6 +65,7 @@ task : str,
         max_parameter : Optional[float] = None,
         compile : bool = True,
 ```
+In particular, the argument split controls how weights are assigned, i.e. 0--per template, 1--per clause, and 2--per literal. Per template weight assignment was used by δILP and per literal is used by dilp2 by default. 
 
 ## Running in bulk
 
