@@ -74,7 +74,7 @@ def main(task : str,
         split : int = 2,
         min_parameter : Optional[float] = None,
         max_parameter : Optional[float] = None,
-        compile : bool = True,
+        compile : bool = False,
         **rules_args):
     
     if info:

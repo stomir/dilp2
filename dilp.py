@@ -168,9 +168,7 @@ def masked_softmax(t : torch.Tensor, mask : torch.Tensor, temp : Optional[float]
     if temp is None or temp == 0.:
         t = t.where(mask, torch.as_tensor(0., device=t.device))
         if temp is not None:
-            print(f'1 {t=}')
             t = t / torch.max(t.sum(dim = -1, keepdim=True), torch.as_tensor(1e-3, device=t.device))
-            print(f'2 {t=}')
     else:
         t = t.where(mask, torch.as_tensor(-float('inf'), device=t.device)).softmax(-1)
         t = t.where(t.isnan().logical_not(), torch.as_tensor(0.0, device=t.device)) #type: ignore
@@ -406,7 +404,6 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
     
     pred_count : int = rule_weights.shape[0]
     per_dev = math.ceil(pred_count / len(devices))
-    print(f'{pred_count=} {per_dev=}')
     
     rule_weights_ : List[torch.Tensor] = []
     for i, dev in enumerate(devices):
