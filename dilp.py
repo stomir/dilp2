@@ -110,16 +110,21 @@ class Norms(NamedTuple):
                 disjunction_quantifier = disjunction_dim_max,
                 disjunction_steps = disjunction2_max,
                 disjunction_clauses = disjunction2_max)
+        elif norm_name == 'dilp1':
+            return Norms(conjunction_body_pred = conjunction2_prod,
+                disjunction_quantifier = disjunction_dim_max,
+                disjunction_steps = disjunction2_prod,
+                disjunction_clauses = disjunction2_max)
         elif norm_name == 'soft_max_ex':
             return Norms(conjunction_body_pred = conjunction2_prod,
                 disjunction_quantifier = lambda t,d: soft_max(t,d,p),
                 disjunction_steps = disjunction2_max,
                 disjunction_clauses = disjunction2_max)
         elif norm_name == 'soft_max':
-                return Norms(conjunction_body_pred = dim2two(lambda t,d: soft_max(t,d,-p)),
-                    disjunction_quantifier = lambda t,d: soft_max(t,d,p),
-                    disjunction_steps = dim2two(lambda t,d: soft_max(t,d,p)),
-                    disjunction_clauses = dim2two(lambda t,d: soft_max(t,d,p)))
+            return Norms(conjunction_body_pred = dim2two(lambda t,d: soft_max(t,d,-p)),
+                disjunction_quantifier = lambda t,d: soft_max(t,d,p),
+                disjunction_steps = dim2two(lambda t,d: soft_max(t,d,p)),
+                disjunction_clauses = dim2two(lambda t,d: soft_max(t,d,p)))
         elif norm_name == 'weird':
             return Norms(conjunction_body_pred = weird.WeirdMin.apply,
                 disjunction_quantifier = weird.WeirdMaxDim.apply,
