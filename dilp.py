@@ -1,4 +1,3 @@
-from sys import exec_prefix
 import torch
 import logging
 import math
@@ -182,7 +181,7 @@ def random_init(init : str, device : torch.device, shape : List[int], init_size 
         dtype (_type_): type for the weights
 
     Raises:
-        RuntimeError: when given a wrong string
+        RuntimeError: when given a wrong init string
 
     Returns:
         torch.Tensor: random weights
@@ -296,13 +295,13 @@ def squeeze_into(v : torch.Tensor, dim : int, dim2 : int) -> torch.Tensor:
 
 def extend_val(val : torch.Tensor) -> torch.Tensor:
     """ 
-    extends a valuation tensor of binary predicates into 9x more tertiary onces (one for each variable choice)
+    extends a truth tensor of binary predicates into 9x more tertiary onces (one for each variable choice)
 
     Args:
-        val (torch.Tensor): valuation tensor
+        val (torch.Tensor): truth tensor
 
     Returns:
-        torch.Tensor: extended valuation tensor
+        torch.Tensor: extended truth tensor
     """
     ret = []
     shape = list(val.shape) + [val.shape[-1]]
@@ -335,7 +334,7 @@ def infer_single_step(ex_val : torch.Tensor,
     performs a single step of differetiable inference
 
     Args:
-        ex_val (torch.Tensor): extend valuation tensor
+        ex_val (torch.Tensor): extend truth tensor
         rule_weights (torch.Tensor): weights
         split (int): how is the program split (one of 0,1,2)
         norms (Norms): tuple with norm functions
@@ -344,7 +343,7 @@ def infer_single_step(ex_val : torch.Tensor,
         NotImplementedError: when given wrong `split`
 
     Returns:
-        torch.Tensor: valuation tensor (no longer extended)
+        torch.Tensor: truth tensor (no longer extended)
     """
 
     #add dimensions for atoms
@@ -432,7 +431,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
 
     Args:
         steps (int): number of steps
-        base_val (torch.Tensor): starting valuation tensor (background knowledge)
+        base_val (torch.Tensor): starting truth tensor (background knowledge)
         problem (Problem): problem description
         return_dev (torch.device): device on which returns value should be
         devices (Sequence[torch.device]): GPUs to use
@@ -441,7 +440,7 @@ def infer_steps_on_devs(steps : int, base_val : torch.Tensor,
         norms (Norms): norms to use
 
     Returns:
-        torch.Tensor: valuation tensor after `steps`
+        torch.Tensor: truth tensor after `steps`
     """
     
     rule_weights = rule_weights[len(problem.bk):]
@@ -478,7 +477,7 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
 
     Args:
         steps (int): number of steps
-        base_val (torch.Tensor): starting valuation tensor (background knowledge)
+        base_val (torch.Tensor): starting truth tensor (background knowledge)
         problem (Problem): problem description
         weights (torch.Tensor): rule weights
         problem (Problem): problem description

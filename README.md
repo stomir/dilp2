@@ -1,38 +1,43 @@
 # δILP2
 
-a differentiable ILP system using high-deimensional search space
+This repository contains an implementation of the method outlined in "Differentiable Inductive Logic Programming in High-Dimensional Space" (see https://arxiv.org/abs/2208.06652). Our implementation is based on https://github.com/ai-systems/DILP-Core and the method presented in "Learning Explanatory Rules from Noisy Data" (see https://arxiv.org/abs/1711.04574). Our System extends δILP by large-scale predicate invention. 
 
 ## Usage
 
 Example usage (with CUDA acceleration):
 
 ```bash
-python3 run.py examples/arith_even --inv 20 --steps 20 --epochs 1000 --batch_size 0.5 --cuda True
+python3 run.py examples/arith_even --inv=20 --steps=25 --epochs=2000 --batch_size=0.5 --cuda=True
 ```
 
 Using multiple GPUs:
 
 ```bash
-python3 run.py examples/arith_even --inv 20 --steps 20 --epochs 1000 --batch_size 0.5 --cuda False --devices 0,1,2,3
+python3 run.py examples/arith_even --inv=20 --steps=20 --epochs 1000 --batch_size=0.5 --cuda=False --devices=0,1,2,3
 ```
+
+By default, δILP2 uses `torch.compile` to optimize computations. This sometimes causes problems. If necessary, use `--compile=False`.
 
 ## Arguments
 
 More flags can be found in the `run.py` file, as arguments of the `main` function:
 
 ```python
-        task : str, 
+task : str, 
         epochs : int, steps : int, 
-        batch_size : Optional[Union[int, float]],
-        cuda : Union[int,bool] = False, inv : int = 0,
-        debug : bool = False, norm : str = 'mixed',
+        batch_size : float = 0.5,
+        cuda : Union[int,bool] = False,
+        inv : int = 0,
+        debug : bool = False,
+        norm : str = 'mixed',
         entropy_weight : float = 0.0,
-        optim : str = 'adam', lr : float = 0.05, clip : Optional[float] = None,
+        optim : str = 'adam', lr : float = 0.05,
+        clip : Optional[float] = None,
         info : bool = False,
-        entropy_enable_threshold : Optional[float] = 1e-2,
+        entropy_enable_threshold : Optional[float] = None,
         normalize_gradients : Optional[float] = None,
-        init : str = 'normal',
-        init_size : float = 1.0,        
+        init : str = 'uniform',
+        init_size : float = 10.0,        
         entropy_weight_step = 1.0,
         end_early : Optional[float] = 1e-3,
         seed : Optional[int] = None,
@@ -43,22 +48,24 @@ More flags can be found in the `run.py` file, as arguments of the `main` functio
         devices : Optional[List[int]] = None,
         entropy_gradient_ratio : Optional[float] = None,
         input : Optional[str] = None, output : Optional[str] = None,
-        tensorboard : Optional[str] = None,
         use_float64 : bool = False,
+        use_float16 : bool = False,
         checkpoint : Optional[str] = None,
         validate_on_cpu : bool = True,
         training_worlds : Optional[int] = None,
+        truth_loss : float = 0.0,
+        diversity_loss : float = 0.0,
+        rerandomize : float = 0.0,
+        rerandomize_interval : int = 1,
+        softmax_temp : Optional[float] = 1.0,
+        norm_p : float = 1.0,
+        target_copies : int = 0,
+        split : int = 2,
+        min_parameter : Optional[float] = None,
+        max_parameter : Optional[float] = None,
+        compile : bool = True,
 ```
-
-and in `torcher.py` as arguments of the `rules` function:
-
-```python
-            layers : Optional[List[int]] = None,
-            unary : List[str] = [],
-            recursion : bool = True, 
-            invented_recursion : bool = True,
-            full_rules : bool = False,
-```
+In particular, the argument split controls how weights are assigned, i.e. 0--per template, 1--per clause, and 2--per literal. Per template weight assignment was used by δILP and per literal is used by dilp2 by default. 
 
 ## Running in bulk
 

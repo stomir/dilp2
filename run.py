@@ -14,9 +14,7 @@ import loader
 import torcher
 import sys
 import traceback
-import plot
 from collections import defaultdict
-from flipper import Flipper
 import torch.nn.functional as F
 
 def report_tensor(vals : Sequence[torch.Tensor], batch : torcher.WorldsBatch) -> torch.Tensor:
@@ -62,8 +60,8 @@ def main(task : str,
         info : bool = False,
         entropy_enable_threshold : Optional[float] = None,
         normalize_gradients : Optional[float] = None,
-        init : str = 'normal',
-        init_size : float = 1.0,        
+        init : str = 'uniform',
+        init_size : float = 10.0,        
         entropy_weight_step = 1.0,
         end_early : Optional[float] = 1e-3,
         seed : Optional[int] = None,
@@ -83,7 +81,6 @@ def main(task : str,
         diversity_loss : float = 0.0,
         rerandomize : float = 0.0,
         rerandomize_interval : int = 1,
-        plot_interval : int = 100,
         softmax_temp : Optional[float] = 1.0,
         norm_p : float = 1.0,
         target_copies : int = 0,
@@ -137,7 +134,7 @@ def main(task : str,
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed) #type: ignore
 
-    dev = torch.device(cuda if type(cuda) == int else 0) if cuda or cuda == 0 else torch.device('cpu')
+    dev = torch.device(cuda if type(cuda) == int else 0) if cuda or type(cuda) is int else torch.device('cpu')
 
     logging.info(f'{dev=}')
 
@@ -200,8 +197,6 @@ def main(task : str,
         opt = torch.optim.Adam(params, lr=lr)
     elif optim == 'sgd':
         opt = torch.optim.SGD(params, lr=lr)
-    elif optim == 'flipper':
-        opt = Flipper(params, lr=lr)
     else:
         assert False
 

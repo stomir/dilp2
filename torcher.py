@@ -65,7 +65,6 @@ class Rulebook(NamedTuple):
         )
 
 T = TypeVar('T')
-
 def chunks(n : int, seq : Sequence[T]) -> Iterable[Sequence[T]]:
     """
     splits the sequence into chunks of length `n`
@@ -83,7 +82,7 @@ def chunks(n : int, seq : Sequence[T]) -> Iterable[Sequence[T]]:
 
 def base_val(problem : Problem, worlds : Sequence[World], dtype) -> torch.Tensor:
     """
-    creates valuation tensor with background knowledge of a problem
+    creates truth tensor with background knowledge of a problem
 
     Args:
         problem (Problem): problem description
@@ -91,7 +90,7 @@ def base_val(problem : Problem, worlds : Sequence[World], dtype) -> torch.Tensor
         dtype (_type_): type to returned tensor
 
     Returns:
-        torch.Tensor: valuation tensor with background knowledge of a problem
+        torch.Tensor: truth tensor with background knowledge of a problem
     """
     atom_count = max(len(w.atoms) for w in worlds)
     ret = torch.zeros(size = [len(worlds), len(problem.predicate_name), atom_count, atom_count], dtype = dtype)
@@ -187,7 +186,7 @@ def rules(problem : Problem,
     Returns:
         Rulebook: prepared rulebook
     """
-    
+        
     pred_dim = len(problem.predicate_name)
 
     unary_preds = set(problem.predicate_number[name] for name in unary)
