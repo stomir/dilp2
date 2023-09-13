@@ -7,7 +7,6 @@ from typing import *
 from loader import Problem
 from torcher import WorldsBatch, TargetSet, TargetType, Rulebook
 import torch.nn.functional as F
-
 import weird
 
 # different norms
@@ -124,47 +123,6 @@ class Norms(NamedTuple):
                 disjunction_quantifier = lambda t,d: soft_max(t,d,p),
                 disjunction_steps = dim2two(lambda t,d: soft_max(t,d,p)),
                 disjunction_clauses = dim2two(lambda t,d: soft_max(t,d,p)))
-        elif norm_name == 'weird':
-            return Norms(conjunction_body_pred = weird.WeirdMin.apply,
-                disjunction_quantifier = weird.WeirdMaxDim.apply,
-                disjunction_steps = weird.WeirdMax.apply,
-                disjunction_clauses = weird.WeirdMaxDim.apply)
-        elif norm_name == 'weird2':
-            return Norms(conjunction_body_pred = conjunction2_prod,
-                disjunction_quantifier = weird.WeirdMax2Dim.apply,
-                disjunction_steps = disjunction2_max,
-                disjunction_clauses = disjunction2_max)
-        elif norm_name == 'weird2_bp':
-            return Norms(conjunction_body_pred = lambda a,b: 1-(weird.WeirdMax2.apply(1-a,1-b)),
-                disjunction_quantifier = weird.WeirdMax2Dim.apply,
-                disjunction_steps = disjunction2_max,
-                disjunction_clauses = disjunction2_max)
-        elif norm_name == 'weird2_steps':
-            return Norms(conjunction_body_pred = conjunction2_prod,
-                disjunction_quantifier = weird.WeirdMax2Dim.apply,
-                disjunction_steps = weird.WeirdMax2.apply,
-                disjunction_clauses = disjunction2_max)
-        elif norm_name == 'weird2_clauses':
-            return Norms(conjunction_body_pred = conjunction2_prod,
-                disjunction_quantifier = weird.WeirdMax2Dim.apply,
-                disjunction_steps = disjunction2_max,
-                disjunction_clauses = weird.WeirdMax2.apply)
-        elif norm_name == 'weird2_all':
-            return Norms(conjunction_body_pred = lambda a,b: 1-(weird.WeirdMax2.apply(1-a,1-b)),
-                disjunction_quantifier = weird.WeirdMax2Dim.apply,
-                disjunction_steps = weird.WeirdMax2.apply,
-                disjunction_clauses = weird.WeirdMax2.apply)
-        elif norm_name == 'gauss_max':
-            gm = weird.gauss_max(p)
-            return Norms(conjunction_body_pred = lambda a,b: 1-gm(1-a,1-b),
-                disjunction_quantifier = two2dim(gm),
-                disjunction_steps = gm,
-                disjunction_clauses = gm)
-        elif norm_name == 'weird2_mixed':
-            return Norms(conjunction_body_pred = lambda a,b: 1-(weird.WeirdMax2.apply(1-a,1-b)),
-                disjunction_quantifier = weird.WeirdMax2Dim.apply,
-                disjunction_steps = disjunction2_max,
-                disjunction_clauses = weird.WeirdMax2.apply)
         else:
             raise NotImplementedError(f"wrong norm name {norm_name=}")
 
@@ -492,7 +450,6 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
     weights = weights[len(problem.bk):]
     bk_zeros = torch.zeros([val.shape[0], len(problem.bk), val.shape[2], val.shape[3]], device = val.device)
 
-    #vals : List[torch.Tensor] = []
     for i in range(0, steps):
         val2 = extend_val(val)
         val2 = infer_single_step(ex_val = val2, \
@@ -501,11 +458,7 @@ def infer_steps(steps : int, base_val : torch.Tensor, rulebook : Rulebook, weigh
             rule_weights = weights)
         val2 = torch.cat([bk_zeros, val2], dim=1)
         
-        #weird grad norm
-        #val2 = weird.WeirdNorm.apply(val2, (-1,-2,-3), 1.0)
-        
         assert val.shape == val2.shape, f"{i=} {val.shape=} {val2.shape=}"
-        #vals.append(val2.unsqueeze(0))
         val = norms.disjunction_steps(val, val2)
     return val
 

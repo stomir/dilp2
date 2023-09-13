@@ -1,6 +1,4 @@
 import torch
-
-import torch
 import math
 from typing import *
 
@@ -135,9 +133,9 @@ class WeirdNorm(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         mean = grad_output.mean(ctx.dims, keepdim=True)
-        var = (grad_output - mean).square().mean().sqrt()
+        var = grad_output.var(ctx.dims, keepdim=True)
         eps = 1e-9
-        return grad_output / (ctx.scale * (var + eps)), None, None
+        return (grad_output - mean) / (ctx.scale * (var + eps)), None, None
 
 class GaussMax(torch.autograd.Function):
     @staticmethod

@@ -4,9 +4,7 @@ import torch
 from tqdm import tqdm #type: ignore
 import torch
 import logging
-#from core import Term, Atom
 from typing import *
-import itertools
 import numpy
 import random
 import os
@@ -54,15 +52,11 @@ def main(task : str,
         inv : int = 0,
         debug : bool = False,
         norm : str = 'mixed',
-        entropy_weight : float = 0.0,
         optim : str = 'adam', lr : float = 0.05,
         clip : Optional[float] = None,
         info : bool = False,
-        entropy_enable_threshold : Optional[float] = None,
-        normalize_gradients : Optional[float] = None,
         init : str = 'uniform',
         init_size : float = 10.0,        
-        entropy_weight_step = 1.0,
         end_early : Optional[float] = 1e-3,
         seed : Optional[int] = None,
         validate : bool = True,
@@ -70,17 +64,10 @@ def main(task : str,
         validate_training : bool = True,
         worlds_batch_size : int = 1,
         devices : Optional[List[int]] = None,
-        entropy_gradient_ratio : Optional[float] = None,
         input : Optional[str] = None, output : Optional[str] = None,
-        use_float64 : bool = False,
-        use_float16 : bool = False,
         checkpoint : Optional[str] = None,
         validate_on_cpu : bool = True,
         training_worlds : Optional[int] = None,
-        truth_loss : float = 0.0,
-        diversity_loss : float = 0.0,
-        rerandomize : float = 0.0,
-        rerandomize_interval : int = 1,
         softmax_temp : Optional[float] = 1.0,
         norm_p : float = 1.0,
         target_copies : int = 0,
@@ -98,13 +85,7 @@ def main(task : str,
     inv = int(inv)
     steps = int(steps)
 
-
-    if use_float64:
-        dtype = torch.float64
-    elif use_float16:
-        dtype = torch.bfloat16
-    else:
-        dtype = torch.float32
+    dtype = torch.float32
         
     if compile and inv == 0:
         logging.warning("There's a known bug where using inv==0 and torch.compile together prevents learning. Setting compile=False")
@@ -168,13 +149,11 @@ def main(task : str,
     #prepare rules
     rulebook = torcher.rules(problem, dev, split = split, **rules_args)
 
-    shape = rulebook.mask.shape
-
     #set up torch module
     module = dilp.DILP(
         norms=dilp.Norms.from_name(norm, p=norm_p),
         device=dev,
-        devices=[torch.device(i) for i in devices] if devices is not None else None,
+        devices=devs,
         rulebook=rulebook,
         init_type=init,
         init_size=init_size,
@@ -199,9 +178,6 @@ def main(task : str,
         opt = torch.optim.SGD(params, lr=lr)
     else:
         assert False
-
-    entropy_enabled = entropy_enable_threshold is None
-    entropy_weight_in_use = 0.0 if entropy_enable_threshold is not None else 1.0
     
     logging.debug(f'{problem=}')
 
@@ -222,8 +198,6 @@ def main(task : str,
         chosen_per_world_batch : Dict[loader.TargetType, Sequence[torch.Tensor]] = dict((ttype, 
                             [(torch.rand(len(batch.targets(ttype)), device=dev) <= batch_size) for batch in worlds_batches]) for ttype in loader.TargetType)
         chosen_per_ttype : Dict[loader.TargetType, int] = dict((ttype, sum(int(c.sum().item()) for c in chosen_per_world_batch[ttype])) for ttype in loader.TargetType)
-
-        all_worlds_sizes = dict((t, sum(len(b.targets(t)) for b in worlds_batches)) for t in loader.TargetType)
 
         loss_sum = 0.0
 
@@ -257,15 +231,6 @@ def main(task : str,
                 target_losses.append(one_target_loss)
 
                 assert ls >= 0
-
-                #optionally apply experimental auxiliary loss
-                if truth_loss != 0.0:
-                    ls = ls + vals.mean(0).sum(0).mean(0).mean(0) * truth_loss
-
-                #optionally apply experimental auxiliary loss
-                if diversity_loss != 0.0:
-                    print(f"{vals.shape=}")
-                    ls = ls + (vals.unsqueeze(2) - vals.unsqueeze(1)).square().mean(0).sum(0).mean(0).mean(0).mean(0) * diversity_loss
                 
                 #backpropagate
                 if ls != 0.0:
@@ -276,29 +241,10 @@ def main(task : str,
                 del loss, vals, targets, preds, ls
                 torch.cuda.empty_cache()
             
-            #optionally apply experimental auxiliary loss
-            if normalize_gradients is not None:
-                with torch.no_grad():
-                    for fuzzy in params:
-                        if fuzzy.grad is not None:
-                            logging.info(f"{fuzzy.grad.norm(2)=}")
-                            fuzzy.grad[:] = torch.nn.functional.normalize(fuzzy.grad, dim=-1)
-                            fuzzy.grad *= normalize_gradients
-                
-            if entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
-                entropy_enabled = True
             
             entropy_loss : torch.Tensor = norm_loss(dilp.mask(module.weights, rulebook))
             entropy_loss = dilp.mask(entropy_loss, rulebook)
             actual_entropy = entropy_loss.mean()
-            if entropy_enabled:
-                if entropy_gradient_ratio is not None:
-                    entropy_loss = entropy_loss * entropy_gradient_ratio * module.weights.norm(p=2, dim=-1, keepdim=True)
-                entropy_loss = entropy_loss.mean()
-                if entropy_weight_in_use < 1.0 and entropy_enable_threshold is not None and loss_sum < entropy_enable_threshold:
-                    entropy_weight_in_use += entropy_weight_step
-                entropy_loss = entropy_loss * entropy_weight_in_use * entropy_weight
-                entropy_loss.backward()
 
             #compute total loss
             target_loss = sum(target_losses) / len(target_losses)
